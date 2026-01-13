@@ -366,7 +366,13 @@ class StatusOut(BaseModel):
 async def on_startup() -> None:
     logger.info("market_service started", env=settings.app_env)
     global redis_client
-    redis_client = Redis(host=settings.redis_host, port=settings.redis_port, decode_responses=True)
+    redis_client = Redis(
+        host=settings.redis_host,
+        port=settings.redis_port,
+        password=settings.redis_password,
+        ssl=settings.redis_ssl,
+        decode_responses=True,
+    )
     asyncio.create_task(bybit_ws_loop())
 
 

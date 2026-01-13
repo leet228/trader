@@ -50,6 +50,8 @@ class Settings(BaseSettings):
 
     redis_host: str = "localhost"
     redis_port: int = 6379
+    redis_password: str | None = None
+    redis_ssl: bool = False
 
     telegram_bot_token: str | None = None
     telegram_admin_id: int | None = None

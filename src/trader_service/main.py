@@ -552,7 +552,13 @@ async def _close_trade(session: AsyncSession, trade: TradeModel, dec: DecisionMo
 async def on_startup() -> None:
     logger.info("trader_service started", env=settings.app_env)
     global redis_client
-    redis_client = Redis(host=settings.redis_host, port=settings.redis_port, decode_responses=True)
+    redis_client = Redis(
+        host=settings.redis_host,
+        port=settings.redis_port,
+        password=settings.redis_password,
+        ssl=settings.redis_ssl,
+        decode_responses=True,
+    )
     asyncio.create_task(redis_consumer_loop())
     asyncio.create_task(bar_consumer_loop())
     asyncio.create_task(news_consumer_loop())

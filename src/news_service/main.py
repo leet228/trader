@@ -85,7 +85,13 @@ async def _exists(session: AsyncSession, news_id: str) -> bool:
 async def on_startup() -> None:
     logger.info("news_service started", env=settings.app_env)
     global redis_client
-    redis_client = Redis(host=settings.redis_host, port=settings.redis_port, decode_responses=True)
+    redis_client = Redis(
+        host=settings.redis_host,
+        port=settings.redis_port,
+        password=settings.redis_password,
+        ssl=settings.redis_ssl,
+        decode_responses=True,
+    )
     asyncio.create_task(ingest_loop())
 
 
