@@ -1,0 +1,30 @@
+Metadata-Version: 2.4
+Name: trader-platform
+Version: 0.1.0
+Summary: Modular trading MVP: market/news/ML signals with FastAPI services.
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.115.4
+Requires-Dist: uvicorn[standard]>=0.30.6
+Requires-Dist: pydantic>=2.8.2
+Requires-Dist: pydantic-settings>=2.4.0
+Requires-Dist: aiohttp>=3.9.5
+Requires-Dist: aiogram>=3.4.0
+Requires-Dist: alembic>=1.13.2
+Requires-Dist: numpy>=1.26.4
+Requires-Dist: pandas>=2.2.2
+Requires-Dist: redis>=5.0.1
+Requires-Dist: sqlalchemy>=2.0.32
+Requires-Dist: asyncpg>=0.29.0
+Requires-Dist: scikit-learn>=1.4.2
+Requires-Dist: shap>=0.44.1
+Requires-Dist: joblib>=1.3.2
+Requires-Dist: aiohttp>=3.9.5
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: loguru>=0.7.2
+Requires-Dist: tenacity>=8.2.3
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: typing-extensions>=4.10.0
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: mypy; extra == "dev"

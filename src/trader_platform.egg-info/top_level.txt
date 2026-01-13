@@ -1,0 +1,8 @@
+ai_nlp_service
+market_service
+news_service
+pattern_service
+shared
+telegram_bot_service
+trader_service
+trainer_service
