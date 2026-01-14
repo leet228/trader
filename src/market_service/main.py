@@ -245,8 +245,23 @@ async def handle_ws_message(payload: dict) -> None:
             return
         timeframe_raw = parts[1]
         symbol = parts[2]
-        tf_map = {"1": Timeframe.m1, "1m": Timeframe.m1, "15": Timeframe.m15, "15m": Timeframe.m15, "60": Timeframe.h1, "1h": Timeframe.h1}
-        timeframe = tf_map.get(timeframe_raw, Timeframe.m1)
+        # Normalize Bybit raw tf (can come as "m1", "1", "1m")
+        tf_norm = {
+            "1": "1m",
+            "1m": "1m",
+            "m1": "1m",
+            "5": "5m",
+            "5m": "5m",
+            "m5": "5m",
+            "15": "15m",
+            "15m": "15m",
+            "m15": "15m",
+            "60": "1h",
+            "1h": "1h",
+            "m60": "1h",
+        }.get(timeframe_raw, "1m")
+        tf_map = {"1m": Timeframe.m1, "5m": Timeframe.m5, "15m": Timeframe.m15, "1h": Timeframe.h1}
+        timeframe = tf_map.get(tf_norm, Timeframe.m1)
         data = payload["data"]
         # Bybit returns list of bars
         bars = data if isinstance(data, list) else [data]
