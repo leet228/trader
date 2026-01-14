@@ -25,6 +25,8 @@ services:
     depends_on:
       - postgres
       - redis
+    ports:
+      - "8001:8001"
 
   pattern_service:
     build: .
@@ -34,6 +36,8 @@ services:
       - postgres
       - redis
       - market_service
+    ports:
+      - "8002:8002"
 
   news_service:
     build: .
@@ -42,6 +46,8 @@ services:
     depends_on:
       - postgres
       - redis
+    ports:
+      - "8003:8003"
 
   ai_nlp_service:
     build: .
@@ -50,6 +56,8 @@ services:
     depends_on:
       - postgres
       - redis
+    ports:
+      - "8004:8004"
 
   trader_service:
     build: .
@@ -59,6 +67,8 @@ services:
       - postgres
       - redis
       - pattern_service
+    ports:
+      - "8005:8005"
 
   telegram_bot_service:
     build: .
@@ -67,6 +77,8 @@ services:
     depends_on:
       - postgres
       - redis
+    ports:
+      - "8007:8007"
 
 volumes:
   pgdata:

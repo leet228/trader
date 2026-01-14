@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Awaitable, Callable
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.bot import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import Message
 from fastapi import Depends, FastAPI
@@ -301,7 +303,10 @@ async def on_startup() -> None:
     if not settings.telegram_bot_token:
         logger.warning("telegram bot token not set; bot disabled")
         return
-    bot = Bot(token=settings.telegram_bot_token, parse_mode="Markdown")
+    bot = Bot(
+        token=settings.telegram_bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
+    )
     dp = Dispatcher()
     register_handlers(dp)
     if settings.telegram_polling:
