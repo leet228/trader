@@ -23,20 +23,13 @@ def upgrade():
     # drop default that references enum before converting
     op.execute("ALTER TABLE market_features ALTER COLUMN regime DROP DEFAULT;")
 
-    op.alter_column(
-        "market_features",
-        "regime",
-        existing_type=regime_enum,
-        type_=sa.String(length=16),
-        existing_nullable=False,
-        postgresql_using="regime::text",
-        existing_server_default=sa.text("'UNKNOWN'::regime"),
-        server_default=None,
-    )
+    # convert column to text
+    op.execute("ALTER TABLE market_features ALTER COLUMN regime TYPE TEXT USING regime::text;")
     # set a new text default after conversion
     op.execute("ALTER TABLE market_features ALTER COLUMN regime SET DEFAULT 'UNKNOWN';")
 
-    op.execute("DROP TYPE IF EXISTS regime;")
+    # drop enum type with cascade to remove any lingering deps
+    op.execute("DROP TYPE IF EXISTS regime CASCADE;")
 
 
 def downgrade():
@@ -48,6 +41,5 @@ def downgrade():
         type_=regime_enum,
         existing_nullable=False,
         postgresql_using="regime::regime",
-        existing_server_default=sa.text("'UNKNOWN'"),
         server_default="UNKNOWN",
     )
