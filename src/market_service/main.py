@@ -138,11 +138,14 @@ async def save_bar_and_features(
     volume: float,
 ) -> None:
     timeframe_enum = _normalize_timeframe(timeframe)
+    if not isinstance(timeframe_enum, Timeframe):
+        logger.warning("timeframe_normalize_fallback", original=timeframe, normalized=timeframe_enum)
+        timeframe_enum = Timeframe.m1
     # persist bar
     bar = MarketBar(
         ts=ts,
         symbol=symbol,
-        timeframe=timeframe_enum,
+        timeframe=timeframe_enum.value,
         open=open_,
         high=high,
         low=low,
