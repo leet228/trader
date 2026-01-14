@@ -59,7 +59,8 @@ class MarketFeatures(Base):
     returns: Mapped[float | None] = mapped_column(Float, nullable=True)
     vol: Mapped[float | None] = mapped_column(Float, nullable=True)
     spread: Mapped[float | None] = mapped_column(Float, nullable=True)
-    regime: Mapped[Regime] = mapped_column(Enum(Regime), default=Regime.unknown, nullable=False)
+    # store regime as plain text to avoid enum mismatch during ingestion
+    regime: Mapped[str] = mapped_column(String(16), default=Regime.unknown.value, nullable=False)
 
 
 class PatternSignal(Base):

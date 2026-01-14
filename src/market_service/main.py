@@ -192,7 +192,7 @@ async def save_bar_and_features(
         returns=state.returns.to_list()[-1] if len(state.returns) else None,
         vol=vol_val,
         spread=spread_pct,
-        regime=reg_enum,
+        regime=reg_enum.value,
     )
     session.add(features)
     await publish_to_redis(
@@ -444,7 +444,7 @@ async def status(session: SessionDep) -> list[StatusOut]:
         row = res.first()
         if row:
             ema200_val = row[0]
-            reg = row[1].value if row[1] else None
+            reg = row[1] if row[1] else None
             atr_val = row[2]
             vol_val = row[3]
         out.append(

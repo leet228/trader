@@ -138,15 +138,14 @@ async def redis_consumer_loop() -> None:
         msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=50, block=5000)
         if not msgs:
             continue
-        async with get_session() as session_gen:
-            async for session in session_gen:
-                for _, entries in msgs:
-                    for msg_id, data in entries:
-                        try:
-                            await process_feature(data, session)
-                            await redis_client.xack(stream, group, msg_id)
-                        except Exception as exc:  # noqa: BLE001
-                            logger.warning("pattern processing failed", error=str(exc), msg_id=msg_id)
+        async with SessionLocal() as session:
+            for _, entries in msgs:
+                for msg_id, data in entries:
+                    try:
+                        await process_feature(data, session)
+                        await redis_client.xack(stream, group, msg_id)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("pattern processing failed", error=str(exc), msg_id=msg_id)
 
 
 @app.on_event("startup")
