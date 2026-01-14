@@ -100,10 +100,36 @@ class CandleAgg:
 agg_state: dict[int, dict[str, CandleAgg]] = defaultdict(lambda: defaultdict(lambda: CandleAgg(1)))
 
 
+def _normalize_timeframe(tf: Timeframe | str) -> Timeframe:
+    """Ensure timeframe is one of our enums; accept Bybit-style strings."""
+    if isinstance(tf, Timeframe):
+        return tf
+    tf_norm = {
+        "1": "1m",
+        "1m": "1m",
+        "m1": "1m",
+        "5": "5m",
+        "5m": "5m",
+        "m5": "5m",
+        "15": "15m",
+        "15m": "15m",
+        "m15": "15m",
+        "60": "1h",
+        "1h": "1h",
+        "m60": "1h",
+    }.get(str(tf), "1m")
+    return {
+        "1m": Timeframe.m1,
+        "5m": Timeframe.m5,
+        "15m": Timeframe.m15,
+        "1h": Timeframe.h1,
+    }.get(tf_norm, Timeframe.m1)
+
+
 async def save_bar_and_features(
     session: AsyncSession,
     symbol: str,
-    timeframe: Timeframe,
+    timeframe: Timeframe | str,
     ts: datetime,
     open_: float,
     high: float,
@@ -111,11 +137,12 @@ async def save_bar_and_features(
     close: float,
     volume: float,
 ) -> None:
+    timeframe_enum = _normalize_timeframe(timeframe)
     # persist bar
     bar = MarketBar(
         ts=ts,
         symbol=symbol,
-        timeframe=timeframe,
+        timeframe=timeframe_enum,
         open=open_,
         high=high,
         low=low,
@@ -246,22 +273,7 @@ async def handle_ws_message(payload: dict) -> None:
         timeframe_raw = parts[1]
         symbol = parts[2]
         # Normalize Bybit raw tf (can come as "m1", "1", "1m")
-        tf_norm = {
-            "1": "1m",
-            "1m": "1m",
-            "m1": "1m",
-            "5": "5m",
-            "5m": "5m",
-            "m5": "5m",
-            "15": "15m",
-            "15m": "15m",
-            "m15": "15m",
-            "60": "1h",
-            "1h": "1h",
-            "m60": "1h",
-        }.get(timeframe_raw, "1m")
-        tf_map = {"1m": Timeframe.m1, "5m": Timeframe.m5, "15m": Timeframe.m15, "1h": Timeframe.h1}
-        timeframe = tf_map.get(tf_norm, Timeframe.m1)
+        timeframe = _normalize_timeframe(timeframe_raw)
         data = payload["data"]
         # Bybit returns list of bars
         bars = data if isinstance(data, list) else [data]
