@@ -20,6 +20,9 @@ regime_enum = sa.Enum("TREND_UP", "TREND_DOWN", "RANGE", "UNKNOWN", name="regime
 
 
 def upgrade():
+    # drop default that references enum before converting
+    op.execute("ALTER TABLE market_features ALTER COLUMN regime DROP DEFAULT;")
+
     op.alter_column(
         "market_features",
         "regime",
@@ -41,3 +44,4 @@ def downgrade():
         existing_nullable=False,
         postgresql_using="regime::regime",
     )
+    op.execute("ALTER TABLE market_features ALTER COLUMN regime SET DEFAULT 'UNKNOWN';")
