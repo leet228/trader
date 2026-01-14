@@ -30,7 +30,12 @@ def upgrade():
         type_=sa.String(length=16),
         existing_nullable=False,
         postgresql_using="regime::text",
+        existing_server_default=sa.text("'UNKNOWN'::regime"),
+        server_default=None,
     )
+    # set a new text default after conversion
+    op.execute("ALTER TABLE market_features ALTER COLUMN regime SET DEFAULT 'UNKNOWN';")
+
     op.execute("DROP TYPE IF EXISTS regime;")
 
 
@@ -43,5 +48,6 @@ def downgrade():
         type_=regime_enum,
         existing_nullable=False,
         postgresql_using="regime::regime",
+        existing_server_default=sa.text("'UNKNOWN'"),
+        server_default="UNKNOWN",
     )
-    op.execute("ALTER TABLE market_features ALTER COLUMN regime SET DEFAULT 'UNKNOWN';")
