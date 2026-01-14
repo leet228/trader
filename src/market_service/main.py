@@ -139,7 +139,7 @@ async def save_bar_and_features(
 ) -> None:
     timeframe_enum = _normalize_timeframe(timeframe)
     if not isinstance(timeframe_enum, Timeframe):
-        logger.warning("timeframe_normalize_fallback", original=timeframe, normalized=timeframe_enum)
+        logger.warning(f"timeframe_normalize_fallback raw={timeframe} normalized={timeframe_enum}")
         timeframe_enum = Timeframe.m1
     # persist bar
     bar = MarketBar(
@@ -236,7 +236,7 @@ async def publish_to_redis(bars_payload: dict, features_payload: dict) -> None:
             approximate=True,
         )
     except Exception as exc:  # noqa: BLE001 - log any redis issue
-        logger.warning("failed to publish to redis", error=str(exc))
+        logger.warning(f"failed to publish to redis: {exc}")
 
 
 async def bybit_ws_loop() -> None:
