@@ -3,107 +3,70 @@ version: "3.9"
 services:
   postgres:
     image: postgres:16
-    container_name: trader-postgres
-    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-trader}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trader}
       POSTGRES_DB: ${POSTGRES_DB:-trader}
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
 
   redis:
     image: redis:7
-    container_name: trader-redis
-    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
 
   market_service:
-    build:
-      context: .
+    build: .
     command: uvicorn market_service.main:app --host 0.0.0.0 --port 8001
-    environment:
-      - APP_ENV=compose
-      - REDIS_HOST=redis
-      - POSTGRES_HOST=postgres
+    env_file: .env
     depends_on:
-      - redis
       - postgres
+      - redis
 
   pattern_service:
-    build:
-      context: .
+    build: .
     command: uvicorn pattern_service.main:app --host 0.0.0.0 --port 8002
-    environment:
-      - APP_ENV=compose
-      - REDIS_HOST=redis
-      - POSTGRES_HOST=postgres
+    env_file: .env
     depends_on:
-      - redis
       - postgres
+      - redis
+      - market_service
 
   news_service:
-    build:
-      context: .
+    build: .
     command: uvicorn news_service.main:app --host 0.0.0.0 --port 8003
-    environment:
-      - APP_ENV=compose
-      - REDIS_HOST=redis
-      - POSTGRES_HOST=postgres
+    env_file: .env
     depends_on:
-      - redis
       - postgres
+      - redis
 
   ai_nlp_service:
-    build:
-      context: .
+    build: .
     command: uvicorn ai_nlp_service.main:app --host 0.0.0.0 --port 8004
-    environment:
-      - APP_ENV=compose
-      - REDIS_HOST=redis
-      - POSTGRES_HOST=postgres
+    env_file: .env
     depends_on:
-      - redis
       - postgres
+      - redis
 
   trader_service:
-    build:
-      context: .
+    build: .
     command: uvicorn trader_service.main:app --host 0.0.0.0 --port 8005
-    environment:
-      - APP_ENV=compose
-      - REDIS_HOST=redis
-      - POSTGRES_HOST=postgres
+    env_file: .env
     depends_on:
-      - redis
       - postgres
-
-  trainer_service:
-    build:
-      context: .
-    command: uvicorn trainer_service.main:app --host 0.0.0.0 --port 8006
-    environment:
-      - APP_ENV=compose
-      - REDIS_HOST=redis
-      - POSTGRES_HOST=postgres
-    depends_on:
       - redis
-      - postgres
+      - pattern_service
 
   telegram_bot_service:
-    build:
-      context: .
+    build: .
     command: uvicorn telegram_bot_service.main:app --host 0.0.0.0 --port 8007
-    environment:
-      - APP_ENV=compose
-      - REDIS_HOST=redis
-      - POSTGRES_HOST=postgres
+    env_file: .env
     depends_on:
-      - redis
       - postgres
+      - redis
 
 volumes:
   pgdata:
