@@ -6,6 +6,7 @@ __pycache__/
 .DS_Store
 .env
 env
+.envrc
 data/
 *.joblib
 *.json
