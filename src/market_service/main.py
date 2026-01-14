@@ -141,6 +141,8 @@ async def save_bar_and_features(
     if not isinstance(timeframe_enum, Timeframe):
         logger.warning(f"timeframe_normalize_fallback raw={timeframe} normalized={timeframe_enum}")
         timeframe_enum = Timeframe.m1
+    else:
+        logger.info(f"timeframe_normalized tf={timeframe_enum.value} raw={timeframe}")
     # persist bar
     bar = MarketBar(
         ts=ts,
@@ -219,19 +221,31 @@ async def save_bar_and_features(
     )
 
 
+def _clean_payload(payload: dict) -> dict:
+    cleaned = {}
+    for k, v in payload.items():
+        if v is None:
+            continue
+        if isinstance(v, (dict, list)):
+            cleaned[k] = str(v)
+        else:
+            cleaned[k] = v
+    return cleaned
+
+
 async def publish_to_redis(bars_payload: dict, features_payload: dict) -> None:
     if redis_client is None:
         return
     try:
         await redis_client.xadd(
             settings.redis_stream_bars,
-            bars_payload,
+            _clean_payload(bars_payload),
             maxlen=settings.redis_xadd_maxlen,
             approximate=True,
         )
         await redis_client.xadd(
             settings.redis_stream_features,
-            features_payload,
+            _clean_payload(features_payload),
             maxlen=settings.redis_xadd_maxlen,
             approximate=True,
         )
