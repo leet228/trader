@@ -172,6 +172,7 @@ async def save_bar_and_features(
     atr_val = atr_pct(state.highs.to_list(), state.lows.to_list(), state.closes.to_list(), 14)
     vol_val = realized_vol(state.returns.to_list())
     reg = regime(ema200, state.ema200_prev)
+    reg_enum = Regime(str(reg).upper())
     state.ema200_prev = ema200
     spread_pct = None
     if state.bid and state.ask and state.ask > 0 and state.bid > 0:
@@ -191,7 +192,7 @@ async def save_bar_and_features(
         returns=state.returns.to_list()[-1] if len(state.returns) else None,
         vol=vol_val,
         spread=spread_pct,
-        regime=Regime(reg),
+        regime=reg_enum,
     )
     session.add(features)
     await publish_to_redis(
@@ -216,7 +217,7 @@ async def save_bar_and_features(
             "rsi": rsi_val,
             "returns": state.returns.to_list()[-1] if len(state.returns) else None,
             "vol": vol_val,
-            "regime": reg,
+            "regime": reg_enum.value,
         },
     )
 

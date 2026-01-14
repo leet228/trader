@@ -41,7 +41,7 @@ async def process_feature(feature: dict, session: AsyncSession) -> None:
     rsi = _f(feature.get("rsi"))
     atr = _f(feature.get("atr_pct"))
     vol = _f(feature.get("vol"))
-    regime_val = Regime(feature.get("regime", "UNKNOWN"))
+    regime_val = Regime(str(feature.get("regime", "UNKNOWN")).upper())
 
     # placeholder: block mean-reversion if recent high vol
     meanrev_blocked = vol is not None and vol > 0.01
