@@ -54,7 +54,7 @@ async def process_feature(feature: dict, session: AsyncSession) -> None:
     result = detect_patterns(
         symbol=symbol,
         timeframe=timeframe,
-        close=_f(feature.get("close")) or _fetch_last_close(symbol, session),
+        close=_f(feature.get("close")) or (await _fetch_last_close(symbol, session)),
         ema20=ema20,
         ema50=ema50,
         ema200=ema200,
