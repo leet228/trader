@@ -19,6 +19,7 @@ from shared.config import get_settings
 from shared.db import SessionLocal, get_session
 from shared.logger import configure_logging, logger
 from shared.models import BotState, Decision, ModelPrediction, NewsScore, PatternSignal, Trade
+from shared.notify import send_telegram_message
 
 configure_logging()
 settings = get_settings()
@@ -278,16 +279,15 @@ async def _pnl_between(session: AsyncSession, start: datetime, end: datetime) ->
 async def report_loop() -> None:
     while True:
         try:
-            async with get_session() as session_gen:
-                async for session in session_gen:
-                    now = datetime.now(timezone.utc)
-                    start_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                    start_week = start_day - timedelta(days=7)
-                    pnl_day = await _pnl_between(session, start_day, now)
-                    pnl_week = await _pnl_between(session, start_week, now)
-                    await send_telegram_message(
-                        f"Auto report\nPnL day: {pnl_day:.2f} USD\nPnL week: {pnl_week:.2f} USD"
-                    )
+            async with SessionLocal() as session:
+                now = datetime.now(timezone.utc)
+                start_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                start_week = start_day - timedelta(days=7)
+                pnl_day = await _pnl_between(session, start_day, now)
+                pnl_week = await _pnl_between(session, start_week, now)
+                await send_telegram_message(
+                    f"Auto report\nPnL day: {pnl_day:.2f} USD\nPnL week: {pnl_week:.2f} USD"
+                )
             # sleep until next report hour UTC
             now = datetime.now(timezone.utc)
             target = now.replace(hour=settings.report_hour_utc, minute=0, second=0, microsecond=0)
