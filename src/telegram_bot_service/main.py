@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Awaitable, Callable
 
 from aiogram import Bot, Dispatcher
+from aiogram import BaseMiddleware
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
@@ -15,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.config import get_settings
-from shared.db import get_session
+from shared.db import SessionLocal, get_session
 from shared.logger import configure_logging, logger
 from shared.models import BotState, Decision, ModelPrediction, NewsScore, PatternSignal, Trade
 
@@ -68,6 +69,13 @@ def _admin_only(handler: Callable[[Message, AsyncSession], Awaitable[None]]):
         await handler(message, session)
 
     return wrapper
+
+
+class DBSessionMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event, data):
+        async with SessionLocal() as session:
+            data["session"] = session
+            return await handler(event, data)
 
 
 async def _status_text(session: AsyncSession) -> str:
@@ -308,6 +316,7 @@ async def on_startup() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
     )
     dp = Dispatcher()
+    dp.message.middleware(DBSessionMiddleware())
     register_handlers(dp)
     if settings.telegram_polling:
         asyncio.create_task(aiogram_polling())
