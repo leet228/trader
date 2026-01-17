@@ -85,6 +85,7 @@ async def _status_text(session: AsyncSession) -> str:
     open_trades = res_trades.scalar() or 0
     res_pnl = await session.execute(select(func.sum(Trade.pnl)))
     pnl = res_pnl.scalar() or 0.0
+    # use plain text, no markdown to avoid parse errors
     return (
         f"Mode: {state.mode}\n"
         f"Halt: {state.halt}, Paused_until: {state.paused_until}\n"
@@ -313,7 +314,7 @@ async def on_startup() -> None:
         return
     bot = Bot(
         token=settings.telegram_bot_token,
-        default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher()
     dp.message.middleware(DBSessionMiddleware())
