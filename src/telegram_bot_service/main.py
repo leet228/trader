@@ -101,9 +101,11 @@ async def _signals_text(session: AsyncSession) -> str:
     ps = res.scalar_one_or_none()
     if not ps:
         return "No signals yet."
+    tf_str = ps.timeframe.value if hasattr(ps.timeframe, "value") else str(ps.timeframe)
+    setup_str = ps.market_setup.value if hasattr(ps.market_setup, "value") else str(ps.market_setup)
     return (
-        f"Last signal {ps.symbol} {ps.timeframe.value}\n"
-        f"Setup: {ps.market_setup.value} | Bias: {ps.market_bias:.2f} | Conf: {ps.market_confidence:.2f}\n"
+        f"Last signal {ps.symbol} {tf_str}\n"
+        f"Setup: {setup_str} | Bias: {ps.market_bias:.2f} | Conf: {ps.market_confidence:.2f}\n"
         f"Name: {ps.setup_name}"
     )
 
