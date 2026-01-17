@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.config import get_settings
 from shared.db import SessionLocal, get_session
 from shared.logger import configure_logging, logger
-from shared.models import MarketFeatures, PatternSignal as PatternSignalModel
+from shared.models import MarketBar, MarketFeatures, PatternSignal as PatternSignalModel
 from shared.patterns import detect_patterns
 from shared.schemas import PatternSignal, Regime, Timeframe
 
@@ -90,7 +90,7 @@ def _f(value):
 
 async def _fetch_last_close(symbol: str, session: AsyncSession) -> float | None:
     res = await session.execute(
-        select(MarketFeatures.close).where(MarketFeatures.symbol == symbol).order_by(MarketFeatures.ts.desc()).limit(1)
+        select(MarketBar.close).where(MarketBar.symbol == symbol).order_by(MarketBar.ts.desc()).limit(1)
     )
     row = res.first()
     return row[0] if row else None
