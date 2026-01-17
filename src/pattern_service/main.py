@@ -119,6 +119,7 @@ async def persist_and_publish(ps: PatternSignal, session: AsyncSession) -> None:
                 "market_confidence": ps.market_confidence,
                 "market_setup": ps.market_setup.value,
                 "setup_name": ps.setup_name or "",
+                "close": await _fetch_last_close(ps.symbol, session) or "",
             },
             maxlen=settings.redis_xadd_maxlen,
             approximate=True,
@@ -143,9 +144,13 @@ async def redis_consumer_loop() -> None:
                 for msg_id, data in entries:
                     try:
                         await process_feature(data, session)
+                        await session.commit()
                         await redis_client.xack(stream, group, msg_id)
                     except Exception as exc:  # noqa: BLE001
-                        logger.warning("pattern processing failed", error=str(exc), msg_id=msg_id)
+                        await session.rollback()
+                        logger.exception(
+                            "pattern processing failed", error=str(exc), msg_id=msg_id, data=data
+                        )
 
 
 @app.on_event("startup")
