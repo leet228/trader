@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.config import get_settings
-from shared.db import get_session
+from shared.db import SessionLocal, get_session
 from shared.logger import configure_logging, logger
 from shared.models import MarketFeatures, PatternSignal as PatternSignalModel
 from shared.patterns import detect_patterns
