@@ -143,18 +143,24 @@ async def save_bar_and_features(
         timeframe_enum = Timeframe.m1
     else:
         logger.info(f"timeframe_normalized tf={timeframe_enum.value} raw={timeframe}")
-    # persist bar
-    bar = MarketBar(
-        ts=ts,
-        symbol=symbol,
-        timeframe=timeframe_enum.value,
-        open=open_,
-        high=high,
-        low=low,
-        close=close,
-        volume=volume,
+    # persist bar with conflict ignore on unique (symbol,timeframe,ts)
+    bar_values = {
+        "ts": ts,
+        "symbol": symbol,
+        "timeframe": timeframe_enum.value,
+        "open": open_,
+        "high": high,
+        "low": low,
+        "close": close,
+        "volume": volume,
+    }
+    stmt = (
+        MarketBar.__table__
+        .insert()
+        .values(**bar_values)
+        .on_conflict_do_nothing(index_elements=["symbol", "timeframe", "ts"])
     )
-    session.add(bar)
+    await session.execute(stmt)
 
     state = symbol_states[symbol]
     state.closes.append(close)

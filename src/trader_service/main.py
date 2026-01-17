@@ -17,7 +17,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.config import get_settings
-from shared.db import get_session
+from shared.db import SessionLocal, get_session
 from shared.logger import configure_logging, logger
 from shared.models import (
     BotState,
@@ -396,18 +396,19 @@ async def bar_consumer_loop() -> None:
         msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=50, block=5000)
         if not msgs:
             continue
-        async with get_session() as session_gen:
-            async for session in session_gen:
-                for _, entries in msgs:
-                    for msg_id, data in entries:
-                        try:
-                            if use_orderbook:
-                                await handle_orderbook(data, session)
-                            else:
-                                await handle_bar(data, session)
-                            await redis_client.xack(stream, group, msg_id)
-                        except Exception as exc:  # noqa: BLE001
-                            logger.warning("trader handle_stream failed", error=str(exc), msg_id=msg_id)
+        async with SessionLocal() as session:
+            for _, entries in msgs:
+                for msg_id, data in entries:
+                    try:
+                        if use_orderbook:
+                            await handle_orderbook(data, session)
+                        else:
+                            await handle_bar(data, session)
+                        await session.commit()
+                        await redis_client.xack(stream, group, msg_id)
+                    except Exception as exc:  # noqa: BLE001
+                        await session.rollback()
+                        logger.warning("trader handle_stream failed", error=str(exc), msg_id=msg_id)
 
 
 async def handle_bar(data: dict, session: AsyncSession) -> None:
