@@ -295,7 +295,7 @@ async def bybit_ws_loop() -> None:
                         elif msg.type == aiohttp.WSMsgType.ERROR:
                             raise RuntimeError(f"ws error {msg}")
         except Exception as exc:  # noqa: BLE001
-            logger.warning("ws reconnecting", error=str(exc), backoff=backoff)
+            logger.exception("ws reconnecting", error=str(exc), backoff=backoff)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
 
