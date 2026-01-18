@@ -45,13 +45,16 @@ class Settings(BaseSettings):
     postgres_user: str = "trader"
     postgres_password: str = "trader"
     postgres_db: str = "trader"
-    postgres_host: str = "localhost"
+    postgres_host: str = "postgres"
     postgres_port: int = 5432
 
-    redis_host: str = "localhost"
+    redis_host: str = "redis"
     redis_port: int = 6379
     redis_password: str | None = None
     redis_ssl: bool = False
+
+    trainer_service_url: str = "http://trainer_service:8006"
+    trader_service_url: str = "http://trader_service:8005"
 
     telegram_bot_token: str | None = None
     telegram_admin_id: int | None = None

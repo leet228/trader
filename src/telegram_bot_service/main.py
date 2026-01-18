@@ -4,8 +4,9 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Awaitable, Callable
 
-from aiogram import Bot, Dispatcher
+import aiohttp
 from aiogram import BaseMiddleware
+from aiogram import Bot, Dispatcher
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
@@ -18,8 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.config import get_settings
 from shared.db import SessionLocal, get_session
 from shared.logger import configure_logging, logger
-from shared.models import BotState, Decision, ModelPrediction, NewsScore, PatternSignal, Trade
+from redis.asyncio import Redis
+from shared.models import BotState, Decision, MarketBar, MarketFeatures, ModelPrediction, NewsScore, PatternSignal, Trade
 from shared.notify import send_telegram_message
+from shared.schemas import Timeframe
 
 configure_logging()
 settings = get_settings()
@@ -29,6 +32,7 @@ app = FastAPI(title="Telegram Bot Service", version="0.1.0")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 bot: Bot | None = None
 dp: Dispatcher | None = None
+redis_client: Redis | None = None
 
 
 class BotStateOut(BaseModel):
@@ -151,6 +155,97 @@ async def _model_text(session: AsyncSession) -> str:
     return f"{meta_text}\n{conf_line}"
 
 
+async def _db_info_text(session: AsyncSession) -> str:
+    counts = {}
+    tables = [
+        ("pattern_signals", PatternSignal),
+        ("market_bars", MarketBar),
+        ("market_features", MarketFeatures),
+        ("trades", Trade),
+        ("decisions", Decision),
+        ("model_predictions", ModelPrediction),
+        ("news_scores", NewsScore),
+    ]
+    for name, model in tables:
+        res = await session.execute(select(func.count()).select_from(model))
+        counts[name] = res.scalar() or 0
+    lines = [f"{k}: {v}" for k, v in counts.items()]
+    return "DB counts:\n" + "\n".join(lines)
+
+
+async def _redis_info_text() -> str:
+    if not redis_client:
+        return "Redis not configured"
+    try:
+        info = await redis_client.info(section="memory")
+        dbsize = await redis_client.dbsize()
+        streams = {
+            "bars": settings.redis_stream_bars,
+            "features": settings.redis_stream_features,
+            "patterns": settings.redis_stream_patterns,
+            "orderbook": settings.redis_stream_orderbook,
+            "news_events": settings.redis_stream_news_events,
+            "news_scores": settings.redis_stream_news_scores,
+        }
+        lens = {}
+        for k, stream in streams.items():
+            try:
+                lens[k] = await redis_client.xlen(stream)
+            except Exception:
+                lens[k] = -1
+        lines = [
+            f"dbsize: {dbsize}",
+            f"used_memory_human: {info.get('used_memory_human', 'n/a')}",
+            "streams:",
+        ]
+        lines.extend([f"- {k}: {v}" for k, v in lens.items()])
+        return "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001
+        return f"Redis info error: {exc}"
+
+
+async def _call_trainer_api(timeframe: Timeframe, horizon_minutes: int, model_type: str) -> str:
+    url = settings.trainer_service_url.rstrip("/") + "/train"
+    payload = {
+        "timeframe": timeframe.value,
+        "horizon_minutes": horizon_minutes,
+        "model_type": model_type,
+    }
+    async with aiohttp.ClientSession() as client:
+        try:
+            async with client.post(url, json=payload, timeout=180) as resp:
+                body = await resp.text()
+                if resp.status != 200:
+                    return f"Train failed ({resp.status}): {body[:500]}"
+                data = await resp.json()
+        except Exception as exc:  # noqa: BLE001
+            return f"Train request error: {exc}"
+    metrics = data.get("metrics", {})
+    version = data.get("model_version") or "n/a"
+    top = data.get("top_features") or []
+    metrics_str = ", ".join(f"{k}={v}" for k, v in metrics.items())
+    return (
+        f"Train ok. version={version}\n"
+        f"model_type={model_type} tf={timeframe.value} horizon={horizon_minutes}m\n"
+        f"metrics: {metrics_str}\n"
+        f"top: {', '.join(top)}"
+    )
+
+
+async def _call_trader_reload() -> str:
+    url = settings.trader_service_url.rstrip("/") + "/reload_model"
+    async with aiohttp.ClientSession() as client:
+        try:
+            async with client.post(url, timeout=30) as resp:
+                body = await resp.text()
+                if resp.status != 200:
+                    return f"Reload failed ({resp.status}): {body[:300]}"
+                data = await resp.json()
+        except Exception as exc:  # noqa: BLE001
+            return f"Reload request error: {exc}"
+    return f"Reload status: {data.get('status', 'unknown')}"
+
+
 async def _pnl_between(session: AsyncSession, start: datetime, end: datetime) -> float:
     res = await session.execute(
         select(func.sum(Trade.pnl)).where(
@@ -163,19 +258,43 @@ async def _pnl_between(session: AsyncSession, start: datetime, end: datetime) ->
 
 
 def register_handlers(dp: Dispatcher) -> None:
+    help_text = (
+        "Available commands:\n"
+        "/help - this help\n"
+        "/status - bot state & equity\n"
+        "/pause - pause trading for 60m\n"
+        "/resume - resume trading\n"
+        "/kill - halt trading\n"
+        "/risk - risk & limits\n"
+        "/signals - last pattern signal\n"
+        "/news - last news score\n"
+        "/model - last model prediction/meta\n"
+        "/dbinfo - DB row counts (patterns/bars/features/trades/decisions/...)\n"
+        "/redisinfo - Redis stats & stream lengths\n"
+        "/report - PnL day/week\n"
+        "/trades - last 10 trades\n"
+        "/why - last decision explanation\n"
+        "/train [tf] [horizon] [model] - train model (admin)\n"
+        "/reload_model - reload best model in trader (admin)"
+    )
+
+    @dp.message(Command("help"))
+    async def cmd_help(message: Message, session: AsyncSession) -> None:  # session injected for consistency
+        await message.answer(help_text)
+
     @dp.message(Command("status"))
-    async def cmd_status(message: Message, session: SessionDep) -> None:
+    async def cmd_status(message: Message, session: AsyncSession) -> None:
         await message.answer(await _status_text(session))
 
     @dp.message(Command("pause"))
-    async def cmd_pause(message: Message, session: SessionDep) -> None:
+    async def cmd_pause(message: Message, session: AsyncSession) -> None:
         state = await _get_or_create_state(session)
         state.paused_until = datetime.now(timezone.utc) + timedelta(minutes=60)
         await session.commit()
         await message.answer("Paused for 60 minutes")
 
     @dp.message(Command("resume"))
-    async def cmd_resume(message: Message, session: SessionDep) -> None:
+    async def cmd_resume(message: Message, session: AsyncSession) -> None:
         state = await _get_or_create_state(session)
         state.paused_until = None
         state.halt = False
@@ -183,14 +302,14 @@ def register_handlers(dp: Dispatcher) -> None:
         await message.answer("Resumed")
 
     @dp.message(Command("kill"))
-    async def cmd_kill(message: Message, session: SessionDep) -> None:
+    async def cmd_kill(message: Message, session: AsyncSession) -> None:
         state = await _get_or_create_state(session)
         state.halt = True
         await session.commit()
         await message.answer("Halt set")
 
     @dp.message(Command("risk"))
-    async def cmd_risk(message: Message, session: SessionDep) -> None:
+    async def cmd_risk(message: Message, session: AsyncSession) -> None:
         state = await _get_or_create_state(session)
         await message.answer(
             f"Risk/trade: {state.risk_per_trade_pct}%\n"
@@ -200,19 +319,27 @@ def register_handlers(dp: Dispatcher) -> None:
         )
 
     @dp.message(Command("signals"))
-    async def cmd_signals(message: Message, session: SessionDep) -> None:
+    async def cmd_signals(message: Message, session: AsyncSession) -> None:
         await message.answer(await _signals_text(session))
 
     @dp.message(Command("news"))
-    async def cmd_news(message: Message, session: SessionDep) -> None:
+    async def cmd_news(message: Message, session: AsyncSession) -> None:
         await message.answer(await _news_text(session))
 
     @dp.message(Command("model"))
-    async def cmd_model(message: Message, session: SessionDep) -> None:
+    async def cmd_model(message: Message, session: AsyncSession) -> None:
         await message.answer(await _model_text(session))
 
+    @dp.message(Command("dbinfo"))
+    async def cmd_dbinfo(message: Message, session: AsyncSession) -> None:
+        await message.answer(await _db_info_text(session))
+
+    @dp.message(Command("redisinfo"))
+    async def cmd_redisinfo(message: Message, session: AsyncSession) -> None:
+        await message.answer(await _redis_info_text())
+
     @dp.message(Command("report"))
-    async def cmd_report(message: Message, session: SessionDep) -> None:
+    async def cmd_report(message: Message, session: AsyncSession) -> None:
         now = datetime.now(timezone.utc)
         start_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
         start_week = start_day - timedelta(days=7)
@@ -224,7 +351,7 @@ def register_handlers(dp: Dispatcher) -> None:
         )
 
     @dp.message(Command("trades"))
-    async def cmd_trades(message: Message, session: SessionDep) -> None:
+    async def cmd_trades(message: Message, session: AsyncSession) -> None:
         res = await session.execute(
             select(Trade)
             .order_by(Trade.open_ts.desc())
@@ -243,7 +370,7 @@ def register_handlers(dp: Dispatcher) -> None:
         await message.answer("\n".join(lines))
 
     @dp.message(Command("why"))
-    async def cmd_why(message: Message, session: SessionDep) -> None:
+    async def cmd_why(message: Message, session: AsyncSession) -> None:
         res = await session.execute(
             select(Decision, ModelPrediction)
             .join(ModelPrediction, ModelPrediction.ts == Decision.ts, isouter=True)
@@ -267,16 +394,32 @@ def register_handlers(dp: Dispatcher) -> None:
             )
         await message.answer(txt)
 
+    @dp.message(Command("train"))
+    @_admin_only
+    async def cmd_train(message: Message, session: AsyncSession) -> None:
+        parts = (message.text or "").split()
+        tf_raw = parts[1] if len(parts) > 1 else Timeframe.m5.value
+        try:
+            tf = Timeframe(tf_raw)
+        except ValueError:
+            await message.answer("Bad timeframe. Use 1m / 5m / 15m / 1h")
+            return
+        try:
+            horizon = int(parts[2]) if len(parts) > 2 else 30
+        except ValueError:
+            await message.answer("Bad horizon. Provide integer minutes, e.g. 30")
+            return
+        model_type = parts[3] if len(parts) > 3 else "gbm"
+        await message.answer(f"Training started: tf={tf.value} horizon={horizon}m model={model_type}")
+        result = await _call_trainer_api(tf, horizon, model_type)
+        await message.answer(result)
 
-async def _pnl_between(session: AsyncSession, start: datetime, end: datetime) -> float:
-    res = await session.execute(
-        select(func.sum(Trade.pnl)).where(
-            Trade.close_ts != None,  # type: ignore  # noqa: E711
-            Trade.close_ts >= start,
-            Trade.close_ts <= end,
-        )
-    )
-    return float(res.scalar() or 0.0)
+    @dp.message(Command("reload_model"))
+    @_admin_only
+    async def cmd_reload_model(message: Message, session: AsyncSession) -> None:
+        await message.answer("Reloading model in trader_service...")
+        result = await _call_trader_reload()
+        await message.answer(result)
 
 
 async def report_loop() -> None:
@@ -310,10 +453,17 @@ async def aiogram_polling() -> None:
 @app.on_event("startup")
 async def on_startup() -> None:
     logger.info("telegram_bot_service started", env=settings.app_env)
-    global bot, dp
+    global bot, dp, redis_client
     if not settings.telegram_bot_token:
         logger.warning("telegram bot token not set; bot disabled")
         return
+    redis_client = Redis(
+        host=settings.redis_host,
+        port=settings.redis_port,
+        password=settings.redis_password,
+        ssl=settings.redis_ssl,
+        decode_responses=True,
+    )
     bot = Bot(
         token=settings.telegram_bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),

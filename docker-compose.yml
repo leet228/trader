@@ -69,6 +69,20 @@ services:
       - pattern_service
     ports:
       - "8005:8005"
+    volumes:
+      - ./data/models:/app/data/models
+
+  trainer_service:
+    build: .
+    command: uvicorn trainer_service.main:app --host 0.0.0.0 --port 8006
+    env_file: .env
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8006:8006"
+    volumes:
+      - ./data/models:/app/data/models
 
   telegram_bot_service:
     build: .

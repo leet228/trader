@@ -131,12 +131,18 @@ async def redis_consumer_loop() -> None:
     stream = settings.redis_stream_features
     group = "pattern_service"
     consumer = f"pattern_{datetime.now().timestamp()}"
-    try:
-        await redis_client.xgroup_create(stream, group, id="0", mkstream=True)
-    except Exception:
-        pass
     while True:
-        msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=50, block=5000)
+        try:
+            await redis_client.xgroup_create(stream, group, id="0", mkstream=True)
+        except Exception:
+            pass
+        try:
+            msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=50, block=5000)
+        except Exception as exc:
+            # recover on missing group/stream
+            logger.warning("pattern_service xreadgroup failed", error=str(exc))
+            await asyncio.sleep(1)
+            continue
         if not msgs:
             continue
         async with SessionLocal() as session:

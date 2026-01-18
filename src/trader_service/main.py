@@ -222,12 +222,17 @@ async def redis_consumer_loop() -> None:
     stream = settings.redis_stream_patterns
     group = "trader_service"
     consumer = f"trader_{uuid.uuid4()}"
-    try:
-        await redis_client.xgroup_create(stream, group, id="0", mkstream=True)
-    except Exception:
-        pass
     while True:
-        msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=20, block=5000)
+        try:
+            await redis_client.xgroup_create(stream, group, id="0", mkstream=True)
+        except Exception:
+            pass
+        try:
+            msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=20, block=5000)
+        except Exception as exc:
+            logger.warning("trader pattern consume xreadgroup failed", error=str(exc))
+            await asyncio.sleep(1)
+            continue
         if not msgs:
             continue
         async with get_session() as session_gen:
@@ -246,12 +251,17 @@ async def news_consumer_loop() -> None:
     stream = settings.redis_stream_news_scores
     group = "trader_news"
     consumer = f"trader_news_{uuid.uuid4()}"
-    try:
-        await redis_client.xgroup_create(stream, group, id="0", mkstream=True)
-    except Exception:
-        pass
     while True:
-        msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=50, block=5000)
+        try:
+            await redis_client.xgroup_create(stream, group, id="0", mkstream=True)
+        except Exception:
+            pass
+        try:
+            msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=50, block=5000)
+        except Exception as exc:
+            logger.warning("trader news consume xreadgroup failed", error=str(exc))
+            await asyncio.sleep(1)
+            continue
         if not msgs:
             continue
         for _, entries in msgs:
@@ -284,6 +294,13 @@ def _load_model() -> None:
         logger.info("model loaded", path=latest)
     except Exception as exc:  # noqa: BLE001
         logger.error("failed to load model", error=str(exc))
+
+
+def _reload_model() -> str:
+    global model_artifact
+    model_artifact = None
+    _load_model()
+    return "loaded" if model_artifact else "not_found"
 
 
 async def _predict_ml(ps: PatternSignal, session: AsyncSession):
@@ -388,12 +405,17 @@ async def bar_consumer_loop() -> None:
     stream = settings.redis_stream_orderbook if use_orderbook else settings.redis_stream_bars
     group = "trader_orderbook" if use_orderbook else "trader_bars"
     consumer = f"{group}_{uuid.uuid4()}"
-    try:
-        await redis_client.xgroup_create(stream, group, id="0", mkstream=True)
-    except Exception:
-        pass
     while True:
-        msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=50, block=5000)
+        try:
+            await redis_client.xgroup_create(stream, group, id="0", mkstream=True)
+        except Exception:
+            pass
+        try:
+            msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=50, block=5000)
+        except Exception as exc:
+            logger.warning("trader bar/orderbook consume xreadgroup failed", error=str(exc))
+            await asyncio.sleep(1)
+            continue
         if not msgs:
             continue
         async with SessionLocal() as session:
@@ -569,6 +591,12 @@ async def on_startup() -> None:
 @app.get("/health", response_model=HealthOut)
 async def health() -> HealthOut:
     return HealthOut(status="ok", env=settings.app_env)
+
+
+@app.post("/reload_model")
+async def reload_model() -> dict[str, str]:
+    status = _reload_model()
+    return {"status": status}
 
 
 @app.get("/status", response_model=StatusOut)
