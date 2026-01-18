@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.config import get_settings
@@ -154,11 +155,8 @@ async def save_bar_and_features(
         "close": close,
         "volume": volume,
     }
-    stmt = (
-        MarketBar.__table__
-        .insert()
-        .values(**bar_values)
-        .on_conflict_do_nothing(index_elements=["symbol", "timeframe", "ts"])
+    stmt = insert(MarketBar).values(**bar_values).on_conflict_do_nothing(
+        index_elements=["symbol", "timeframe", "ts"]
     )
     await session.execute(stmt)
 
@@ -200,11 +198,8 @@ async def save_bar_and_features(
         "spread": spread_pct,
         "regime": reg_enum.value,
     }
-    features_stmt = (
-        MarketFeatures.__table__
-        .insert()
-        .values(**features_values)
-        .on_conflict_do_nothing(index_elements=["symbol", "timeframe", "ts"])
+    features_stmt = insert(MarketFeatures).values(**features_values).on_conflict_do_nothing(
+        index_elements=["symbol", "timeframe", "ts"]
     )
     await session.execute(features_stmt)
     await publish_to_redis(
