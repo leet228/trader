@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.config import get_settings
@@ -97,16 +98,16 @@ async def _fetch_last_close(symbol: str, session: AsyncSession) -> float | None:
 
 
 async def persist_and_publish(ps: PatternSignal, session: AsyncSession) -> None:
-    model = PatternSignalModel(
+    stmt = insert(PatternSignalModel).values(
         ts=ps.ts,
         symbol=ps.symbol,
-        timeframe=ps.timeframe,
+        timeframe=ps.timeframe.value,
         market_bias=ps.market_bias,
         market_confidence=ps.market_confidence,
         market_setup=ps.market_setup,
         setup_name=ps.setup_name,
-    )
-    session.add(model)
+    ).on_conflict_do_nothing(index_elements=["symbol", "timeframe", "ts"])
+    await session.execute(stmt)
     await session.commit()
     if redis_client:
         await redis_client.xadd(
