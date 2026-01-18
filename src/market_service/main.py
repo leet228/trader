@@ -186,26 +186,32 @@ async def save_bar_and_features(
         if mid > 0:
             spread_pct = (state.ask - state.bid) / mid
 
-    features = MarketFeatures(
-        ts=ts,
-        symbol=symbol,
-        timeframe=timeframe,
-        atr_pct=atr_val,
-        ema20=ema20,
-        ema50=ema50,
-        ema200=ema200,
-        rsi=rsi_val,
-        returns=state.returns.to_list()[-1] if len(state.returns) else None,
-        vol=vol_val,
-        spread=spread_pct,
-        regime=reg_enum.value,
+    features_values = {
+        "ts": ts,
+        "symbol": symbol,
+        "timeframe": timeframe_enum.value,
+        "atr_pct": atr_val,
+        "ema20": ema20,
+        "ema50": ema50,
+        "ema200": ema200,
+        "rsi": rsi_val,
+        "returns": state.returns.to_list()[-1] if len(state.returns) else None,
+        "vol": vol_val,
+        "spread": spread_pct,
+        "regime": reg_enum.value,
+    }
+    features_stmt = (
+        MarketFeatures.__table__
+        .insert()
+        .values(**features_values)
+        .on_conflict_do_nothing(index_elements=["symbol", "timeframe", "ts"])
     )
-    session.add(features)
+    await session.execute(features_stmt)
     await publish_to_redis(
         bars_payload={
             "ts": ts.isoformat(),
             "symbol": symbol,
-            "timeframe": timeframe.value,
+            "timeframe": timeframe_enum.value,
             "open": open_,
             "high": high,
             "low": low,
@@ -215,7 +221,7 @@ async def save_bar_and_features(
         features_payload={
             "ts": ts.isoformat(),
             "symbol": symbol,
-            "timeframe": timeframe.value,
+            "timeframe": timeframe_enum.value,
             "atr_pct": atr_val,
             "ema20": ema20,
             "ema50": ema50,
@@ -242,22 +248,30 @@ def _clean_payload(payload: dict) -> dict:
 
 async def publish_to_redis(bars_payload: dict, features_payload: dict) -> None:
     if redis_client is None:
+        logger.warning("redis_client is None, skip publish")
         return
     try:
-        await redis_client.xadd(
+        bars_id = await redis_client.xadd(
             settings.redis_stream_bars,
             _clean_payload(bars_payload),
             maxlen=settings.redis_xadd_maxlen,
             approximate=True,
         )
-        await redis_client.xadd(
+        feats_id = await redis_client.xadd(
             settings.redis_stream_features,
             _clean_payload(features_payload),
             maxlen=settings.redis_xadd_maxlen,
             approximate=True,
         )
+        logger.info(
+            "published to redis",
+            bars_stream=settings.redis_stream_bars,
+            bars_id=bars_id,
+            features_stream=settings.redis_stream_features,
+            features_id=feats_id,
+        )
     except Exception as exc:  # noqa: BLE001 - log any redis issue
-        logger.warning(f"failed to publish to redis: {exc}")
+        logger.exception("failed to publish to redis", error=str(exc))
 
 
 async def bybit_ws_loop() -> None:
