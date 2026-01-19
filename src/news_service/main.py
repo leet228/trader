@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
@@ -11,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.config import get_settings
-from shared.db import get_session
+from shared.db import SessionLocal, get_session
 from shared.logger import configure_logging, logger
 from shared.models import NewsEvent
 from .fetcher import fetch_rss
@@ -35,20 +34,25 @@ async def ingest_loop() -> None:
         try:
             await poll_and_store()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("news poll failed", error=str(exc))
+            logger.exception("news poll failed", error=str(exc))
         await asyncio.sleep(settings.news_poll_seconds)
 
 
 async def poll_and_store() -> None:
     assert redis_client
-    async with get_session() as session_gen:
-        async for session in session_gen:
-            sources = settings.rss_urls + [
-                "https://api.gdeltproject.org/api/v2/summary/summary?format=json"
-            ]
-            for url in sources:
+    async with SessionLocal() as session:
+        sources = settings.rss_urls + [
+            "https://api.gdeltproject.org/api/v2/summary/summary?format=json"
+        ]
+        for url in sources:
+            try:
                 items = await fetch_rss(url)
-                for item in items:
+                logger.info("news fetched", source=url, count=len(items))
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("news fetch failed", source=url, error=str(exc))
+                continue
+            for item in items:
+                try:
                     if await _exists(session, item["id"]):
                         continue
                     ev = NewsEvent(
@@ -74,6 +78,9 @@ async def poll_and_store() -> None:
                         maxlen=settings.redis_xadd_maxlen,
                         approximate=True,
                     )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("news store/publish failed", source=url, error=str(exc))
+                    await session.rollback()
 
 
 async def _exists(session: AsyncSession, news_id: str) -> bool:

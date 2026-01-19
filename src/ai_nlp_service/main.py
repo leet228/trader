@@ -10,7 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.config import get_settings
-from shared.db import get_session
+from shared.db import SessionLocal, get_session
 from shared.logger import configure_logging, logger
 from shared.models import NewsScore as NewsScoreModel
 from shared.schemas import EventType, NewsScore
@@ -108,23 +108,29 @@ async def news_consumer_loop() -> None:
     stream = settings.redis_stream_news_events
     group = "ai_nlp_service"
     consumer = f"ai_nlp_{datetime.now().timestamp()}"
-    try:
-        await redis_client.xgroup_create(stream, group, id="0", mkstream=True)
-    except Exception:
-        pass
     while True:
-        msgs = await redis_client.xreadgroup(group, consumer, streams={stream: ">"}, count=50, block=5000)
-        if not msgs:
-            continue
-        async with get_session() as session_gen:
-            async for session in session_gen:
+        try:
+            try:
+                await redis_client.xgroup_create(stream, group, id="0", mkstream=True)
+            except Exception:
+                pass
+            msgs = await redis_client.xreadgroup(
+                group, consumer, streams={stream: ">"}, count=50, block=5000
+            )
+            if not msgs:
+                continue
+            async with SessionLocal() as session:
                 for _, entries in msgs:
                     for msg_id, data in entries:
                         try:
                             await process_news(data, session)
                             await redis_client.xack(stream, group, msg_id)
                         except Exception as exc:  # noqa: BLE001
-                            logger.warning("ai_nlp process failed", error=str(exc), msg_id=msg_id)
+                            logger.exception("ai_nlp process failed", error=str(exc), msg_id=msg_id)
+                            await session.rollback()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("ai_nlp consumer loop error", error=str(exc))
+            await asyncio.sleep(1)
 
 
 @app.on_event("startup")

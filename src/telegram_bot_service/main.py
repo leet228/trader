@@ -8,6 +8,7 @@ import aiohttp
 from aiogram import BaseMiddleware
 from aiogram import Bot, Dispatcher
 from aiogram.client.bot import DefaultBotProperties
+from aiogram.types import BotCommand, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -204,6 +205,59 @@ async def _redis_info_text() -> str:
         return f"Redis info error: {exc}"
 
 
+async def _tf_counts_text(session: AsyncSession) -> str:
+    res_bars = await session.execute(
+        select(MarketBar.timeframe, func.count()).group_by(MarketBar.timeframe)
+    )
+    res_feats = await session.execute(
+        select(MarketFeatures.timeframe, func.count()).group_by(MarketFeatures.timeframe)
+    )
+    res_pat = await session.execute(
+        select(PatternSignal.timeframe, func.count()).group_by(PatternSignal.timeframe)
+    )
+    lines = ["Bars:"]
+    for tf, cnt in res_bars:
+        lines.append(f"  {tf}: {cnt}")
+    lines.append("Features:")
+    for tf, cnt in res_feats:
+        lines.append(f"  {tf}: {cnt}")
+    lines.append("Patterns:")
+    for tf, cnt in res_pat:
+        lines.append(f"  {tf}: {cnt}")
+    return "\n".join(lines)
+
+
+async def _set_bot_commands(bot: Bot) -> None:
+    cmds = [
+        BotCommand(command="help", description="Список команд"),
+        BotCommand(command="status", description="Состояние бота/стратегии"),
+        BotCommand(command="tfinfo", description="Статистика по timeframe"),
+        BotCommand(command="dbinfo", description="Строки в БД"),
+        BotCommand(command="redisinfo", description="Стримы Redis"),
+        BotCommand(command="signals", description="Последний сигнал"),
+        BotCommand(command="news", description="Последняя новость"),
+        BotCommand(command="model", description="Модель/прогноз"),
+        BotCommand(command="report", description="PnL день/неделя"),
+        BotCommand(command="trades", description="Последние сделки"),
+        BotCommand(command="why", description="Причина последнего решения"),
+        BotCommand(command="train", description="Обучить модель (админ)"),
+        BotCommand(command="reload_model", description="Перезагрузить модель (админ)"),
+        BotCommand(command="menu", description="Клавиатура с командами"),
+    ]
+    await bot.set_my_commands(cmds)
+
+
+def _menu_keyboard() -> ReplyKeyboardMarkup:
+    rows = [
+        [KeyboardButton(text="/help"), KeyboardButton(text="/status"), KeyboardButton(text="/tfinfo")],
+        [KeyboardButton(text="/dbinfo"), KeyboardButton(text="/redisinfo"), KeyboardButton(text="/signals")],
+        [KeyboardButton(text="/news"), KeyboardButton(text="/model"), KeyboardButton(text="/report")],
+        [KeyboardButton(text="/trades"), KeyboardButton(text="/why")],
+        [KeyboardButton(text="/train"), KeyboardButton(text="/reload_model")],
+    ]
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
 async def _call_trainer_api(timeframe: Timeframe, horizon_minutes: int, model_type: str) -> str:
     url = settings.trainer_service_url.rstrip("/") + "/train"
     payload = {
@@ -270,6 +324,7 @@ def register_handlers(dp: Dispatcher) -> None:
         "/news - last news score\n"
         "/model - last model prediction/meta\n"
         "/dbinfo - DB row counts (patterns/bars/features/trades/decisions/...)\n"
+        "/tfinfo - DB counts grouped by timeframe\n"
         "/redisinfo - Redis stats & stream lengths\n"
         "/report - PnL day/week\n"
         "/trades - last 10 trades\n"
@@ -334,9 +389,17 @@ def register_handlers(dp: Dispatcher) -> None:
     async def cmd_dbinfo(message: Message, session: AsyncSession) -> None:
         await message.answer(await _db_info_text(session))
 
+    @dp.message(Command("tfinfo"))
+    async def cmd_tfinfo(message: Message, session: AsyncSession) -> None:
+        await message.answer(await _tf_counts_text(session))
+
     @dp.message(Command("redisinfo"))
     async def cmd_redisinfo(message: Message, session: AsyncSession) -> None:
         await message.answer(await _redis_info_text())
+
+    @dp.message(Command("menu"))
+    async def cmd_menu(message: Message, session: AsyncSession) -> None:
+        await message.answer("Команды на клавиатуре", reply_markup=_menu_keyboard())
 
     @dp.message(Command("report"))
     async def cmd_report(message: Message, session: AsyncSession) -> None:
@@ -471,6 +534,7 @@ async def on_startup() -> None:
     dp = Dispatcher()
     dp.message.middleware(DBSessionMiddleware())
     register_handlers(dp)
+    await _set_bot_commands(bot)
     if settings.telegram_polling:
         asyncio.create_task(aiogram_polling())
     asyncio.create_task(report_loop())
