@@ -6,6 +6,8 @@ from xml.etree import ElementTree as ET
 
 import aiohttp
 
+NEWSAPI_URL = "https://newsapi.org/v2/everything"
+
 
 async def fetch_rss(url: str) -> list[dict]:
     items: list[dict] = []
@@ -62,4 +64,38 @@ async def _fetch_json(url: str) -> dict:
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=15) as resp:
             return await resp.json()
+
+
+async def fetch_newsapi(api_key: str, query: str, page_size: int = 50) -> list[dict]:
+    """Fetch news from NewsAPI Everything endpoint with a broad market/crypto query."""
+    params = {
+        "q": query,
+        "language": "en",
+        "sortBy": "publishedAt",
+        "pageSize": page_size,
+    }
+    headers = {"X-Api-Key": api_key}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(NEWSAPI_URL, params=params, headers=headers, timeout=15) as resp:
+            if resp.status != 200:
+                return []
+            data = await resp.json()
+    articles = data.get("articles", []) if isinstance(data, dict) else []
+    items: list[dict] = []
+    for art in articles:
+        title = art.get("title") or ""
+        url = art.get("url") or ""
+        if not title or not url:
+            continue
+        ts = datetime.now(timezone.utc)
+        items.append(
+            {
+                "id": hashlib.sha1(f"{title}{url}".encode()).hexdigest(),
+                "headline": title,
+                "url": url,
+                "ts": ts,
+                "raw_pub": art,
+            }
+        )
+    return items
 

@@ -39,6 +39,12 @@ class Settings(BaseSettings):
         "https://news.google.com/rss/search?q=crypto",
         "https://www.coindesk.com/arc/outboundfeeds/rss/",
     ]
+    newsapi_key: str | None = None
+    newsapi_query: str = (
+        "crypto OR bitcoin OR ethereum OR blockchain OR defi OR web3 OR btc OR eth "
+        "OR binance OR coinbase OR sec OR etf OR regulation OR fed OR inflation OR rates "
+        "OR stocks OR equities OR nasdaq OR sp500 OR macro OR recession OR war OR politics OR sanctions"
+    )
     news_poll_seconds: int = 300
 
     report_hour_utc: int = 15  # 18:00 MSK (~UTC+3)

@@ -96,11 +96,16 @@ async def process_news(data: dict, session: AsyncSession) -> None:
         if ns.news_bias < -0.4 and ns.news_confidence >= 0.6:
             ttl = settings.meanrev_block_news_minutes * 60
             await redis_client.setex("meanrev_block:GLOBAL", ttl, "1")
-        if abs(ns.news_bias) >= 0.5 and ns.news_confidence >= 0.6:
-            await send_telegram_message(
-                f"News alert: bias {ns.news_bias:.2f} conf {ns.news_confidence:.2f}\n"
-                f"{headline}"
-            )
+        # alert once per news_id with stricter threshold to reduce spam
+        if abs(ns.news_bias) >= 0.8 and ns.news_confidence >= 0.8:
+            alerted_key = f"news_alerted:{news_id}"
+            already = await redis_client.get(alerted_key)
+            if not already:
+                await send_telegram_message(
+                    f"News alert: bias {ns.news_bias:.2f} conf {ns.news_confidence:.2f}\n"
+                    f"{headline}"
+                )
+                await redis_client.setex(alerted_key, 6 * 60 * 60, "1")  # suppress duplicates for 6h
 
 
 async def news_consumer_loop() -> None:
