@@ -93,6 +93,8 @@ services:
       - redis
     ports:
       - "8007:8007"
+    volumes:
+      - ./data/models:/app/data/models
 
 volumes:
   pgdata:
