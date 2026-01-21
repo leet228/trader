@@ -139,6 +139,7 @@ async def _model_text(session: AsyncSession) -> str:
     # best effort read meta
     meta_text = ""
     best_text = ""
+    best_found = False
     try:
         from glob import glob
         import json
@@ -147,6 +148,7 @@ async def _model_text(session: AsyncSession) -> str:
         if os.path.exists(best_path):
             with open(best_path) as f:
                 best = json.load(f)
+            best_found = True
             best_text = (
                 f"Current model: {best.get('version','n/a')} ({best.get('model_type','')}) "
                 f"precision@0.7: {best.get('metrics',{}).get('precision_conf_ge_0.7',0):.3f} "
@@ -164,7 +166,10 @@ async def _model_text(session: AsyncSession) -> str:
             )
     except Exception:
         meta_text = ""
-    parts = [p for p in [best_text, meta_text, conf_line] if p]
+    parts = [p for p in [best_text, meta_text] if p]
+    if not parts and not best_found:
+        parts.append("No model artifacts found")
+    parts.append(conf_line)
     return "\n".join(parts)
 
 
