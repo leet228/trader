@@ -372,7 +372,13 @@ async def _predict_ml(ps: PatternSignal, session: AsyncSession):
 async def _latest_features(symbol: str, timeframe: str, session: AsyncSession) -> dict | None:
     res = await session.execute(
         select(MarketFeatures, MarketBar.close)
-        .where(MarketFeatures.symbol == symbol)
+        .join(
+            MarketBar,
+            (MarketBar.ts == MarketFeatures.ts)
+            & (MarketBar.symbol == MarketFeatures.symbol)
+            & (MarketBar.timeframe == MarketFeatures.timeframe),
+        )
+        .where(MarketFeatures.symbol == symbol, MarketFeatures.timeframe == timeframe)
         .order_by(MarketFeatures.ts.desc())
         .limit(1)
     )
@@ -389,6 +395,7 @@ async def _latest_features(symbol: str, timeframe: str, session: AsyncSession) -
         "rsi": mf.rsi,
         "returns": mf.returns,
         "vol": mf.vol,
+        "spread": mf.spread,
         "news_bias": news.get("bias", 0.0),
         "news_confidence": news.get("conf", 0.0),
         "close": close,
