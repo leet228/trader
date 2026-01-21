@@ -25,7 +25,14 @@ def _tf_minutes(tf: Timeframe) -> int:
 def _load_to_df(rows: Sequence) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
-    df = pd.DataFrame([r.__dict__ for r in rows])
+    first = rows[0]
+    if hasattr(first, "_mapping"):  # SQLAlchemy Row
+        data = [dict(r._mapping) for r in rows]
+    elif isinstance(first, dict):
+        data = rows
+    else:
+        data = [r.__dict__ for r in rows]
+    df = pd.DataFrame(data)
     if "ts" in df:
         df["ts"] = pd.to_datetime(df["ts"], utc=True)
     if "ts_scored" in df:
@@ -45,10 +52,10 @@ async def build_dataset(session, timeframe: Timeframe = Timeframe.m5, horizon_mi
     )
     news_res = await session.execute(NewsScore.__table__.select().order_by(NewsScore.ts_scored))
 
-    df_bars = _load_to_df(bars_res.scalars().all())
-    df_feats = _load_to_df(feats_res.scalars().all())
-    df_pat = _load_to_df(pat_res.scalars().all())
-    df_news = _load_to_df(news_res.scalars().all())
+    df_bars = _load_to_df(bars_res.mappings().all())
+    df_feats = _load_to_df(feats_res.mappings().all())
+    df_pat = _load_to_df(pat_res.mappings().all())
+    df_news = _load_to_df(news_res.mappings().all())
 
     if df_bars.empty:
         return pd.DataFrame()
