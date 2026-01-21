@@ -205,8 +205,13 @@ async def handle_signal(data: dict, session: AsyncSession) -> None:
 async def _latest_price_and_stats(symbol: str, timeframe: str, session: AsyncSession):
     res = await session.execute(
         select(MarketBar.close, MarketFeatures.atr_pct, MarketFeatures.spread, MarketFeatures.vol)
-        .join(MarketFeatures, MarketFeatures.ts == MarketBar.ts)
-        .where(MarketBar.symbol == symbol)
+        .join(
+            MarketFeatures,
+            (MarketFeatures.ts == MarketBar.ts)
+            & (MarketFeatures.symbol == MarketBar.symbol)
+            & (MarketFeatures.timeframe == MarketBar.timeframe),
+        )
+        .where(MarketBar.symbol == symbol, MarketBar.timeframe == timeframe)
         .order_by(MarketBar.ts.desc())
         .limit(1)
     )
@@ -339,7 +344,7 @@ async def _predict_ml(ps: PatternSignal, session: AsyncSession):
         if model_artifact.get("model_type") == "gbm" and settings.enable_shap:
             base = model.calibrated_classifiers_[0].base_estimator if hasattr(model, "calibrated_classifiers_") else model
             explainer = shap.Explainer(base)
-            sv = explainer(x)
+            sv = explainer(x_df)
             vals = sv.values[0]
             top_idx = np.argsort(np.abs(vals))[::-1][:3]
             contrib_pairs = [(feat_names[i], float(vals[i])) for i in top_idx]
