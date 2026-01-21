@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
 from shared.config import get_settings
-from shared.db import get_session
+from shared.db import SessionLocal
 from shared.logger import configure_logging, logger
 from shared.schemas import Timeframe
 from .train import build_dataset, train_model
@@ -38,8 +38,8 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/train", response_model=TrainResponse)
-async def train(req: TrainRequest, session=Depends(get_session)) -> TrainResponse:
-    async for db in session:
+async def train(req: TrainRequest) -> TrainResponse:
+    async with SessionLocal() as db:
         df = await build_dataset(db, timeframe=req.timeframe, horizon_minutes=req.horizon_minutes)
     meta, metrics = train_model(df, model_type=req.model_type)
     version = meta["version"] if meta else None
