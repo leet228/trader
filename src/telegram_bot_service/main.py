@@ -137,10 +137,20 @@ async def _model_text(session: AsyncSession) -> str:
     )
     # best effort read meta
     meta_text = ""
+    best_text = ""
     try:
         from glob import glob
         import json
         paths = sorted(glob("data/models/model_*.json"))
+        best_path = "data/models/best_model.json"
+        if os.path.exists(best_path):
+            with open(best_path) as f:
+                best = json.load(f)
+            best_text = (
+                f"Current model: {best.get('version','n/a')} ({best.get('model_type','')}) "
+                f"precision@0.7: {best.get('metrics',{}).get('precision_conf_ge_0.7',0):.3f} "
+                f"n_conf: {best.get('metrics',{}).get('n_conf_ge_0.7',0)}"
+            )
         if paths:
             with open(paths[-1]) as f:
                 meta = json.load(f)
@@ -153,7 +163,8 @@ async def _model_text(session: AsyncSession) -> str:
             )
     except Exception:
         meta_text = ""
-    return f"{meta_text}\n{conf_line}"
+    parts = [p for p in [best_text, meta_text, conf_line] if p]
+    return "\n".join(parts)
 
 
 async def _db_info_text(session: AsyncSession) -> str:

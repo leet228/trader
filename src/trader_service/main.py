@@ -235,15 +235,16 @@ async def redis_consumer_loop() -> None:
             continue
         if not msgs:
             continue
-        async with get_session() as session_gen:
-            async for session in session_gen:
-                for _, entries in msgs:
-                    for msg_id, data in entries:
-                        try:
-                            await handle_signal(data, session)
-                            await redis_client.xack(stream, group, msg_id)
-                        except Exception as exc:  # noqa: BLE001
-                            logger.warning("trader handle_signal failed", error=str(exc), msg_id=msg_id)
+        async with SessionLocal() as session:
+            for _, entries in msgs:
+                for msg_id, data in entries:
+                    try:
+                        await handle_signal(data, session)
+                        await session.commit()
+                        await redis_client.xack(stream, group, msg_id)
+                    except Exception as exc:  # noqa: BLE001
+                        await session.rollback()
+                        logger.warning("trader handle_signal failed", error=str(exc), msg_id=msg_id)
 
 
 async def news_consumer_loop() -> None:
