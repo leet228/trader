@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 import joblib
 import numpy as np
+import pandas as pd
 from redis.asyncio import Redis
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -311,26 +312,14 @@ async def _predict_ml(ps: PatternSignal, session: AsyncSession):
     if feat is None:
         return DecisionSide.hold, 0.0, 0.0, 0.0, "", ""
     features = model_artifact["features"]
-    x = np.array(
-        [
-            [
-                feat.get("atr_pct", 0.0),
-                feat.get("ema20", 0.0),
-                feat.get("ema50", 0.0),
-                feat.get("ema200", 0.0),
-                feat.get("rsi", 0.0),
-                feat.get("returns", 0.0),
-                feat.get("vol", 0.0),
-                ps.market_bias,
-                ps.market_confidence,
-                feat.get("news_bias", 0.0),
-                feat.get("news_confidence", 0.0),
-            ]
-        ]
-    )
+    # Build row with named features to satisfy sklearn feature_names
+    row = {name: float(feat.get(name, 0.0)) for name in features}
+    row["market_bias"] = float(ps.market_bias)
+    row["market_confidence"] = float(ps.market_confidence)
+    x_df = pd.DataFrame([row], columns=features)
     model = model_artifact["model"]
     classes = model_artifact["classes"]
-    proba = model.predict_proba(x)[0]
+    proba = model.predict_proba(x_df)[0]
     idx_max = int(np.argmax(proba))
     conf = float(proba[idx_max])
     class_list = list(classes)
@@ -364,7 +353,7 @@ async def _predict_ml(ps: PatternSignal, session: AsyncSession):
                 coefs = base.coef_
                 class_list = list(classes)
                 idx = class_list.index("long") if "long" in class_list else idx_max
-                feats_arr = x[0]
+                feats_arr = x_df.to_numpy()[0]
                 prod = coefs[idx] * feats_arr
                 top_idx = np.argsort(np.abs(prod))[::-1][:3]
                 contrib_pairs = [(feat_names[i], float(prod[i])) for i in top_idx]
