@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
+from collections.abc import Mapping
 
 import joblib
 import numpy as np
@@ -26,7 +27,9 @@ def _load_to_df(rows: Sequence) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
     first = rows[0]
-    if hasattr(first, "_mapping"):  # SQLAlchemy Row
+    if isinstance(first, Mapping):  # RowMapping or dict
+        data = [dict(r) for r in rows]
+    elif hasattr(first, "_mapping"):  # SQLAlchemy Row
         data = [dict(r._mapping) for r in rows]
     elif isinstance(first, dict):
         data = rows
