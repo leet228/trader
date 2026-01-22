@@ -80,7 +80,13 @@ async def handle_signal(data: dict, session: AsyncSession) -> None:
     )
     # basic guard
     if ps.market_confidence < 0.4:
-        logger.info("skip signal: low market_confidence", conf=ps.market_confidence, symbol=ps.symbol, tf=ps.timeframe)
+        logger.info(
+            "skip signal: low market_confidence",
+            conf=ps.market_confidence,
+            bias=ps.market_bias,
+            symbol=ps.symbol,
+            tf=ps.timeframe,
+        )
         return
     # ML prediction
     pred_side, pred_conf, p_long, p_short, model_version, contrib = await _predict_ml(ps, session)
@@ -93,9 +99,18 @@ async def handle_signal(data: dict, session: AsyncSession) -> None:
         p_long=p_long,
         p_short=p_short,
         threshold=settings.model_confidence_threshold,
+        market_conf=ps.market_confidence,
+        market_bias=ps.market_bias,
     )
     if pred_side == DecisionSide.hold or pred_conf < settings.model_confidence_threshold:
-        logger.info("skip signal: model low confidence or hold", symbol=ps.symbol, tf=ps.timeframe, conf=pred_conf)
+        logger.info(
+            "skip signal: model low confidence or hold",
+            symbol=ps.symbol,
+            tf=ps.timeframe,
+            conf=pred_conf,
+            market_conf=ps.market_confidence,
+            market_bias=ps.market_bias,
+        )
         return
     side = pred_side
 
