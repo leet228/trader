@@ -48,32 +48,41 @@ def _matches(line: str, patterns: Iterable[str]) -> bool:
 
 async def watch_container(container_name: str) -> None:
     client = docker.from_env()
-    try:
-        container = client.containers.get(container_name)
-    except Exception:
-        return
     last_sent = 0.0
     # use current time to avoid replaying old logs
     since = int(time.time())
-    try:
-        for log in container.logs(stream=True, follow=True, since=since):
+    names_to_try = [container_name, f"trader_{container_name}_1"]
+    while True:
+        container = None
+        for name in names_to_try:
             try:
-                line = log.decode(errors="ignore").strip()
+                container = client.containers.get(name)
+                break
             except Exception:
                 continue
-            if not line:
-                continue
-            if not _matches(line, PATTERNS):
-                continue
-            now = time.time()
-            if now - last_sent < RATE_LIMIT_SECONDS:
-                continue
-            last_sent = now
-            ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            msg = f"[log alert] {container_name} {ts} UTC\n{line[:3000]}"
-            await send_telegram(msg)
-    except Exception:
-        return
+        if container is None:
+            await asyncio.sleep(5)
+            continue
+        try:
+            for log in container.logs(stream=True, follow=True, since=since):
+                try:
+                    line = log.decode(errors="ignore").strip()
+                except Exception:
+                    continue
+                if not line:
+                    continue
+                if not _matches(line, PATTERNS):
+                    continue
+                now = time.time()
+                if now - last_sent < RATE_LIMIT_SECONDS:
+                    continue
+                last_sent = now
+                ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                msg = f"[log alert] {container.name} {ts} UTC\n{line[:3000]}"
+                await send_telegram(msg)
+        except Exception:
+            await asyncio.sleep(2)
+            continue
 
 
 async def main() -> None:
