@@ -57,10 +57,12 @@ async def watch_container(container_name: str) -> None:
         for name in names_to_try:
             try:
                 container = client.containers.get(name)
+                print(f"[log_watcher] watching {name}", flush=True)
                 break
             except Exception:
                 continue
         if container is None:
+            print(f"[log_watcher] container not found: {container_name}, retry in 5s", flush=True)
             await asyncio.sleep(5)
             continue
         try:
@@ -81,13 +83,16 @@ async def watch_container(container_name: str) -> None:
                 msg = f"[log alert] {container.name} {ts} UTC\n{line[:3000]}"
                 await send_telegram(msg)
         except Exception:
+            print(f"[log_watcher] error watching {container.name if container else container_name}, retry in 2s", flush=True)
             await asyncio.sleep(2)
             continue
 
 
 async def main() -> None:
+    print("[log_watcher] starting", flush=True)
     tasks = [asyncio.create_task(watch_container(name.strip())) for name in SERVICES if name.strip()]
     if not tasks:
+        print("[log_watcher] no services configured, exit", flush=True)
         return
     await asyncio.gather(*tasks)
 
