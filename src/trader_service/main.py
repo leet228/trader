@@ -336,7 +336,7 @@ async def _predict_ml(ps: PatternSignal, session: AsyncSession):
         return DecisionSide.hold, 0.0, 0.0, 0.0, "", ""
     features = model_artifact["features"]
     # Build row with named features to satisfy sklearn feature_names
-    row = {name: float(feat.get(name, 0.0)) for name in features}
+    row = {name: float(feat.get(name, 0.0) or 0.0) for name in features}
     row["market_bias"] = float(ps.market_bias)
     row["market_confidence"] = float(ps.market_confidence)
     x_df = pd.DataFrame([row], columns=features)
