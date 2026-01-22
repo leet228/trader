@@ -90,7 +90,7 @@ async def handle_signal(data: dict, session: AsyncSession) -> None:
     # news conflict filter
     news = news_cache.get(ps.symbol)
     if news:
-        if news["conf"] >= 0.6 and abs(news["bias"]) >= 0.4:
+        if news["conf"] >= 0.8 and abs(news["bias"]) >= 0.4:
             if news["bias"] * ps.market_bias < 0:  # conflict
                 logger.info("skip due to news conflict", symbol=ps.symbol, news_bias=news["bias"])
                 return
@@ -386,7 +386,14 @@ async def _latest_features(symbol: str, timeframe: str, session: AsyncSession) -
     if not row:
         return None
     mf, close = row
-    news = news_cache.get(symbol) or {}
+    news_raw = news_cache.get(symbol) or {}
+    news_conf = float(news_raw.get("conf", 0.0))
+    news_bias = float(news_raw.get("bias", 0.0))
+    # feed news into model only if it passes softer threshold (conf>=0.65 and |bias|>=0.4)
+    if news_conf >= 0.65 and abs(news_bias) >= 0.4:
+        news = {"bias": news_bias, "conf": news_conf}
+    else:
+        news = {"bias": 0.0, "conf": 0.0}
     return {
         "atr_pct": mf.atr_pct,
         "ema20": mf.ema20,

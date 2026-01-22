@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     telegram_admin_id: int | None = None
     telegram_polling: bool = True
 
-    model_confidence_threshold: float = 0.70
+    model_confidence_threshold: float = 0.65
 
     class Config:
         env_prefix = ""
