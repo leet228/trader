@@ -292,11 +292,7 @@ async def news_consumer_loop() -> None:
 
 def _load_model() -> None:
     global model_artifact
-    best = "data/models/best_model.joblib"
-    if os.path.exists(best):
-        paths = [best]
-    else:
-        paths = sorted(glob.glob("data/models/model_*.joblib"))
+    paths = sorted(glob.glob("data/models/model_*.joblib"))
     if not paths:
         logger.warning("no model artifacts found")
         return
