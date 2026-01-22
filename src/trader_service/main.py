@@ -407,8 +407,8 @@ async def _latest_features(symbol: str, timeframe: str, session: AsyncSession) -
     news_raw = news_cache.get(symbol) or {}
     news_conf = float(news_raw.get("conf", 0.0))
     news_bias = float(news_raw.get("bias", 0.0))
-    # feed news into model only if it passes softer threshold (conf>=0.65 and |bias|>=0.4)
-    if news_conf >= 0.65 and abs(news_bias) >= 0.4:
+    # feed news into model only if it passes threshold (conf>=0.8 and |bias|>=0.4)
+    if news_conf >= 0.8 and abs(news_bias) >= 0.4:
         news = {"bias": news_bias, "conf": news_conf}
     else:
         news = {"bias": 0.0, "conf": 0.0}

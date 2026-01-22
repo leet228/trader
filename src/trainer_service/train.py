@@ -68,8 +68,9 @@ async def build_dataset(session, timeframe: Timeframe = Timeframe.m5, horizon_mi
     df_bars = df_bars.sort_values(["symbol", "ts"])
     df_bars["future_close"] = df_bars.groupby("symbol")["close"].shift(-horizon_steps)
     df_bars["future_ret"] = (df_bars["future_close"] - df_bars["close"]) / df_bars["close"]
+    # Label thresholds: was 0.001 (0.1%), lowered to 0.0005 (0.05%) to reduce hold class dominance
     df_bars["label"] = np.where(
-        df_bars["future_ret"] > 0.001, "long", np.where(df_bars["future_ret"] < -0.001, "short", "hold")
+        df_bars["future_ret"] > 0.0005, "long", np.where(df_bars["future_ret"] < -0.0005, "short", "hold")
     )
 
     df = df_bars.merge(df_feats.drop(columns=["id", "timeframe"], errors="ignore"), on=["symbol", "ts"], how="left")
