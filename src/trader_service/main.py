@@ -250,7 +250,12 @@ async def redis_consumer_loop() -> None:
                         await redis_client.xack(stream, group, msg_id)
                     except Exception as exc:  # noqa: BLE001
                         await session.rollback()
-                        logger.warning("trader handle_signal failed", error=str(exc), msg_id=msg_id)
+                        logger.exception(
+                            "trader handle_signal failed",
+                            error=str(exc),
+                            msg_id=msg_id,
+                            data_keys=list(data.keys()),
+                        )
 
 
 async def news_consumer_loop() -> None:
