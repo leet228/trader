@@ -146,11 +146,12 @@ async def handle_signal(data: dict, session: AsyncSession) -> None:
     decision_id = str(uuid.uuid4())
     trade_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+    decision_enum = side if isinstance(side, DecisionSide) else DecisionSide(side)
     decision = DecisionModel(
         decision_id=decision_id,
         ts=now,
         symbol=ps.symbol,
-        decision=side,
+        decision=decision_enum,
         used_market=True,
         used_news=used_news,
         used_ml=True,
@@ -179,7 +180,7 @@ async def handle_signal(data: dict, session: AsyncSession) -> None:
             trade_id=trade_id,
             decision_id=decision_id,
             open_ts=now,
-            side=side,
+            side=decision_enum,
             qty=qty,
             notional=notional,
             entry_px=entry_price,
