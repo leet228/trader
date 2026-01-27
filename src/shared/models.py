@@ -24,6 +24,29 @@ from .db import Base
 from .schemas import DecisionSide, EventType, MarketSetup, Regime, Timeframe
 
 
+def _enum_values(enum_cls):
+    return [member.value for member in enum_cls]
+
+
+DECISION_SIDE_ENUM = Enum(
+    DecisionSide,
+    values_callable=_enum_values,
+    name="decisionside",
+)
+
+MARKET_SETUP_ENUM = Enum(
+    MarketSetup,
+    values_callable=_enum_values,
+    name="marketsetup",
+)
+
+EVENT_TYPE_ENUM = Enum(
+    EventType,
+    values_callable=_enum_values,
+    name="eventtype",
+)
+
+
 class MarketBar(Base):
     __tablename__ = "market_bars"
     __table_args__ = (
@@ -75,7 +98,7 @@ class PatternSignal(Base):
     timeframe: Mapped[str] = mapped_column(String(16))
     market_bias: Mapped[float] = mapped_column(Float)
     market_confidence: Mapped[float] = mapped_column(Float)
-    market_setup: Mapped[MarketSetup] = mapped_column(Enum(MarketSetup))
+    market_setup: Mapped[MarketSetup] = mapped_column(MARKET_SETUP_ENUM)
     setup_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
@@ -100,7 +123,7 @@ class NewsScore(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     news_id: Mapped[str] = mapped_column(String(64), ForeignKey("news_events.id"), index=True)
     ts_scored: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    event_type: Mapped[EventType] = mapped_column(Enum(EventType))
+    event_type: Mapped[EventType] = mapped_column(EVENT_TYPE_ENUM)
     news_bias: Mapped[float] = mapped_column(Float)
     news_confidence: Mapped[float] = mapped_column(Float)
     horizon_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -129,7 +152,7 @@ class Decision(Base):
     decision_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     symbol: Mapped[str] = mapped_column(String(32), index=True)
-    decision: Mapped[DecisionSide] = mapped_column(Enum(DecisionSide))
+    decision: Mapped[DecisionSide] = mapped_column(DECISION_SIDE_ENUM)
     decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     used_market: Mapped[bool] = mapped_column(Boolean, default=False)
     used_news: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -170,7 +193,7 @@ class Trade(Base):
     decision_id: Mapped[str] = mapped_column(String(64), ForeignKey("decisions.decision_id"))
     open_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     close_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    side: Mapped[DecisionSide] = mapped_column(Enum(DecisionSide))
+    side: Mapped[DecisionSide] = mapped_column(DECISION_SIDE_ENUM)
     qty: Mapped[float | None] = mapped_column(Float, nullable=True)
     notional: Mapped[float | None] = mapped_column(Float, nullable=True)
     entry_px: Mapped[float] = mapped_column(Float)
