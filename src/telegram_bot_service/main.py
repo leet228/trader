@@ -35,6 +35,7 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 bot: Bot | None = None
 dp: Dispatcher | None = None
 redis_client: Redis | None = None
+PNL_RESET_TS_KEY = "bot_state:pnl_reset_ts"
 
 
 class BotStateOut(BaseModel):
@@ -99,11 +100,30 @@ class DBSessionMiddleware(BaseMiddleware):
             return await handler(event, data)
 
 
+async def _get_pnl_reset_ts() -> datetime | None:
+    if not redis_client:
+        return None
+    try:
+        raw = await redis_client.get(PNL_RESET_TS_KEY)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except Exception:
+        return None
+
+
 async def _status_text(session: AsyncSession) -> str:
     state = await _get_or_create_state(session)
     res_trades = await session.execute(select(func.count(Trade.id)).where(Trade.close_ts == None))  # type: ignore  # noqa: E711
     open_trades = res_trades.scalar() or 0
-    res_pnl = await session.execute(select(func.sum(Trade.pnl)))
+    pnl_query = select(func.sum(Trade.pnl)).where(Trade.close_ts != None)  # type: ignore  # noqa: E711
+    reset_ts = await _get_pnl_reset_ts()
+    if reset_ts:
+        pnl_query = pnl_query.where(Trade.close_ts >= reset_ts)  # type: ignore[operator]
+    res_pnl = await session.execute(pnl_query)
     pnl = res_pnl.scalar() or 0.0
     # use plain text, no markdown to avoid parse errors
     return (
@@ -334,6 +354,11 @@ async def _call_trader_reload() -> str:
 
 
 async def _pnl_between(session: AsyncSession, start: datetime, end: datetime) -> float:
+    reset_ts = await _get_pnl_reset_ts()
+    if reset_ts and reset_ts > start:
+        start = reset_ts
+    if start > end:
+        return 0.0
     res = await session.execute(
         select(func.sum(Trade.pnl)).where(
             Trade.close_ts != None,  # type: ignore  # noqa: E711
@@ -524,8 +549,13 @@ def register_handlers(dp: Dispatcher) -> None:
     async def cmd_reset_equity(message: Message, session: AsyncSession) -> None:
         state = await _get_or_create_state(session)
         state.equity_usd = settings.base_equity_usd
+        state.halt = False
+        state.paused_until = None
+        state.last_error = None
         await session.commit()
         await session.refresh(state)
+        if redis_client:
+            await redis_client.set(PNL_RESET_TS_KEY, datetime.now(timezone.utc).isoformat())
         await message.answer(f"Equity reset to {state.equity_usd:.2f} USD")
 
 

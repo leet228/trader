@@ -43,6 +43,7 @@ news_cache: dict[str, dict] = {}
 model_artifact: dict | None = None
 use_orderbook: bool = True
 SIGNAL_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60
+PNL_RESET_TS_KEY = "bot_state:pnl_reset_ts"
 
 
 class HealthOut(BaseModel):
@@ -79,6 +80,21 @@ async def get_bot_state(session: AsyncSession) -> BotState:
         await session.commit()
         await session.refresh(state)
     return state
+
+
+async def _get_pnl_reset_ts() -> datetime | None:
+    if not redis_client:
+        return None
+    try:
+        raw = await redis_client.get(PNL_RESET_TS_KEY)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except Exception:
+        return None
 
 
 async def handle_signal(data: dict, session: AsyncSession) -> None:
@@ -708,6 +724,9 @@ async def _risk_ok(state: BotState, session: AsyncSession) -> bool:
 async def _daily_loss_exceeded(session: AsyncSession, state: BotState) -> bool:
     now = datetime.now(timezone.utc)
     start_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    reset_ts = await _get_pnl_reset_ts()
+    if reset_ts and reset_ts > start_day:
+        start_day = reset_ts
     res = await session.execute(
         select(func.sum(TradeModel.pnl)).where(
             and_(TradeModel.close_ts != None, TradeModel.close_ts >= start_day)  # type: ignore  # noqa: E711
