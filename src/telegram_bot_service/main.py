@@ -62,7 +62,21 @@ async def _get_or_create_state(session: AsyncSession) -> BotState:
     state = res.scalar_one_or_none()
     if state is None:
         state = BotState()
+        state.daily_max_loss_pct = 5.0
+        state.max_trades_per_day = 0
+        state.equity_usd = settings.base_equity_usd
         session.add(state)
+        await session.commit()
+        await session.refresh(state)
+        return state
+    updated = False
+    if state.daily_max_loss_pct != 5.0:
+        state.daily_max_loss_pct = 5.0
+        updated = True
+    if state.max_trades_per_day != 0:
+        state.max_trades_per_day = 0
+        updated = True
+    if updated:
         await session.commit()
         await session.refresh(state)
     return state
@@ -257,6 +271,7 @@ async def _set_bot_commands(bot: Bot) -> None:
         BotCommand(command="report", description="PnL день/неделя"),
         BotCommand(command="trades", description="Последние сделки"),
         BotCommand(command="why", description="Причина последнего решения"),
+        BotCommand(command="reset_equity", description="Сброс equity до базового (админ)"),
         BotCommand(command="train", description="Обучить модель (админ)"),
         BotCommand(command="reload_model", description="Перезагрузить модель (админ)"),
         BotCommand(command="menu", description="Клавиатура с командами"),
@@ -271,6 +286,7 @@ def _menu_keyboard() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="/news"), KeyboardButton(text="/model"), KeyboardButton(text="/report")],
         [KeyboardButton(text="/trades"), KeyboardButton(text="/why")],
         [KeyboardButton(text="/train"), KeyboardButton(text="/reload_model")],
+        [KeyboardButton(text="/reset_equity")],
     ]
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
@@ -346,6 +362,7 @@ def register_handlers(dp: Dispatcher) -> None:
         "/report - PnL day/week\n"
         "/trades - last 10 trades\n"
         "/why - last decision explanation\n"
+        "/reset_equity - reset equity to base (admin)\n"
         "/train [tf] [horizon] [model] - train model (admin)\n"
         "/reload_model - reload best model in trader (admin)"
     )
@@ -383,11 +400,12 @@ def register_handlers(dp: Dispatcher) -> None:
     @dp.message(Command("risk"))
     async def cmd_risk(message: Message, session: AsyncSession) -> None:
         state = await _get_or_create_state(session)
+        max_trades_text = "unlimited" if state.max_trades_per_day <= 0 else str(state.max_trades_per_day)
         await message.answer(
             f"Risk/trade: {state.risk_per_trade_pct}%\n"
             f"Daily max loss: {state.daily_max_loss_pct}%\n"
             f"Max leverage: {state.max_leverage}\n"
-            f"Max trades/day: {state.max_trades_per_day}"
+            f"Max trades/day: {max_trades_text}"
         )
 
     @dp.message(Command("signals"))
@@ -500,6 +518,15 @@ def register_handlers(dp: Dispatcher) -> None:
         await message.answer("Reloading model in trader_service...")
         result = await _call_trader_reload()
         await message.answer(result)
+
+    @dp.message(Command("reset_equity"))
+    @_admin_only
+    async def cmd_reset_equity(message: Message, session: AsyncSession) -> None:
+        state = await _get_or_create_state(session)
+        state.equity_usd = settings.base_equity_usd
+        await session.commit()
+        await session.refresh(state)
+        await message.answer(f"Equity reset to {state.equity_usd:.2f} USD")
 
 
 async def report_loop() -> None:

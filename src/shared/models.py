@@ -19,6 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from .db import Base
 from .schemas import DecisionSide, EventType, MarketSetup, Regime, Timeframe
@@ -28,11 +29,32 @@ def _enum_values(enum_cls):
     return [member.value for member in enum_cls]
 
 
-DECISION_SIDE_ENUM = Enum(
-    DecisionSide,
-    values_callable=_enum_values,
-    name="decisionside",
-)
+class DecisionSideType(TypeDecorator):
+    impl = String(16)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, DecisionSide):
+            return value.value
+        if isinstance(value, str):
+            try:
+                return DecisionSide(value).value
+            except ValueError:
+                return value.upper()
+        return DecisionSide(value).value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        try:
+            return DecisionSide(value)
+        except ValueError:
+            return DecisionSide(str(value).upper())
+
+
+DECISION_SIDE_ENUM = DecisionSideType()
 
 MARKET_SETUP_ENUM = Enum(
     MarketSetup,
@@ -219,9 +241,9 @@ class BotState(Base):
     paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     halt: Mapped[bool] = mapped_column(Boolean, default=False)
     risk_per_trade_pct: Mapped[float] = mapped_column(Float, default=0.5)
-    daily_max_loss_pct: Mapped[float] = mapped_column(Float, default=2.0)
+    daily_max_loss_pct: Mapped[float] = mapped_column(Float, default=5.0)
     max_leverage: Mapped[float] = mapped_column(Float, default=10.0)
-    max_trades_per_day: Mapped[int] = mapped_column(Integer, default=10)
+    max_trades_per_day: Mapped[int] = mapped_column(Integer, default=0)  # 0 = unlimited
     cooldown_after_losses_min: Mapped[float] = mapped_column(Float, default=60.0)
     max_position_time_min: Mapped[int] = mapped_column(Integer, default=360)  # 6 hours
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

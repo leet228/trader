@@ -23,7 +23,12 @@ def _build_engine() -> AsyncEngine:
         f"{settings.postgres_password}@{settings.postgres_host}:"
         f"{settings.postgres_port}/{settings.postgres_db}"
     )
-    return create_async_engine(url, echo=False, future=True)
+    return create_async_engine(
+        url,
+        echo=False,
+        future=True,
+        pool_pre_ping=True,
+    )
 
 
 engine: AsyncEngine = _build_engine()

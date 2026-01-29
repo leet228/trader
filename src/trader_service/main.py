@@ -42,6 +42,7 @@ redis_client: Redis | None = None
 news_cache: dict[str, dict] = {}
 model_artifact: dict | None = None
 use_orderbook: bool = True
+SIGNAL_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60
 
 
 class HealthOut(BaseModel):
@@ -59,10 +60,22 @@ async def get_bot_state(session: AsyncSession) -> BotState:
     state = res.scalar_one_or_none()
     if state is None:
         state = BotState()
-        state.daily_max_loss_pct = 10.0
-        state.max_trades_per_day = 10_000_000_000_000
+        state.daily_max_loss_pct = 5.0
+        state.max_trades_per_day = 0
         state.cooldown_after_losses_min = 10 / 60  # 10 seconds
+        state.equity_usd = settings.base_equity_usd
         session.add(state)
+        await session.commit()
+        await session.refresh(state)
+        return state
+    updated = False
+    if state.daily_max_loss_pct != 5.0:
+        state.daily_max_loss_pct = 5.0
+        updated = True
+    if state.max_trades_per_day != 0:
+        state.max_trades_per_day = 0
+        updated = True
+    if updated:
         await session.commit()
         await session.refresh(state)
     return state
@@ -121,6 +134,35 @@ async def handle_signal(data: dict, session: AsyncSession) -> None:
     price, atr_pct, spread_pct, vol_val = await _latest_price_and_stats(ps.symbol, ps.timeframe, session)
     if price is None:
         return
+    signal_ts = data.get("ts") or ps.ts.isoformat()
+    tf_key = ps.timeframe.value if hasattr(ps.timeframe, "value") else str(ps.timeframe)
+    if redis_client:
+        dedupe_key = f"signal_trade:{ps.symbol}:{tf_key}:{signal_ts}"
+        was_set = await redis_client.set(
+            dedupe_key,
+            "1",
+            nx=True,
+            ex=SIGNAL_DEDUPE_TTL_SECONDS,
+        )
+        if not was_set:
+            logger.info(
+                "skip duplicate signal trade",
+                key=dedupe_key,
+                symbol=ps.symbol,
+                timeframe=tf_key,
+                ts=signal_ts,
+            )
+            return
+    else:
+        res = await session.execute(
+            select(DecisionModel.decision_id).where(
+                DecisionModel.ts == ps.ts,
+                DecisionModel.symbol == ps.symbol,
+            )
+        )
+        if res.scalar_one_or_none():
+            logger.info("skip duplicate signal trade (db)", symbol=ps.symbol, ts=ps.ts)
+            return
     stop_pct = max(0.006, 1.5 * atr_pct) if atr_pct is not None else 0.01
     # dynamic risk: base from state, scaled by model confidence up to 5%
     risk_pct = min(0.05, max(state.risk_per_trade_pct / 100, pred_conf * 0.05))
@@ -651,14 +693,15 @@ async def _risk_ok(state: BotState, session: AsyncSession) -> bool:
             chat_id=settings.alert_daily_limit_channel,
         )
         return False
-    # max trades per day
-    start_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    res = await session.execute(
-        select(func.count(TradeModel.id)).where(TradeModel.open_ts >= start_day)
-    )
-    trades_today = res.scalar() or 0
-    if trades_today >= state.max_trades_per_day:
-        return False
+    # max trades per day (0 = unlimited)
+    if state.max_trades_per_day > 0:
+        start_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        res = await session.execute(
+            select(func.count(TradeModel.id)).where(TradeModel.open_ts >= start_day)
+        )
+        trades_today = res.scalar() or 0
+        if trades_today >= state.max_trades_per_day:
+            return False
     return True
 
 
