@@ -17,7 +17,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, ENUM as PGEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
@@ -30,7 +30,7 @@ def _enum_values(enum_cls):
 
 
 class DecisionSideType(TypeDecorator):
-    impl = String(16)
+    impl = PGEnum(*_enum_values(DecisionSide), name="decisionside", create_type=False)
     cache_ok = True
 
     def process_bind_param(self, value, dialect):
