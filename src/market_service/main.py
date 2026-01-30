@@ -127,6 +127,15 @@ def _normalize_timeframe(tf: Timeframe | str) -> Timeframe:
     }.get(tf_norm, Timeframe.m1)
 
 
+def _is_confirmed_bar(bar: dict) -> bool:
+    confirm = bar.get("confirm")
+    if confirm is None:
+        return True
+    if isinstance(confirm, str):
+        return confirm.lower() == "true"
+    return bool(confirm)
+
+
 async def save_bar_and_features(
     session: AsyncSession,
     symbol: str,
@@ -158,7 +167,7 @@ async def save_bar_and_features(
     stmt = insert(MarketBar).values(**bar_values).on_conflict_do_nothing(
         index_elements=["symbol", "timeframe", "ts"]
     )
-    await session.execute(stmt)
+    bar_res = await session.execute(stmt)
 
     state = symbol_states[symbol]
     state.closes.append(close)
@@ -201,32 +210,34 @@ async def save_bar_and_features(
     features_stmt = insert(MarketFeatures).values(**features_values).on_conflict_do_nothing(
         index_elements=["symbol", "timeframe", "ts"]
     )
-    await session.execute(features_stmt)
-    await publish_to_redis(
-        bars_payload={
-            "ts": ts.isoformat(),
-            "symbol": symbol,
-            "timeframe": timeframe_enum.value,
-            "open": open_,
-            "high": high,
-            "low": low,
-            "close": close,
-            "volume": volume,
-        },
-        features_payload={
-            "ts": ts.isoformat(),
-            "symbol": symbol,
-            "timeframe": timeframe_enum.value,
-            "atr_pct": atr_val,
-            "ema20": ema20,
-            "ema50": ema50,
-            "ema200": ema200,
-            "rsi": rsi_val,
-            "returns": state.returns.to_list()[-1] if len(state.returns) else None,
-            "vol": vol_val,
-            "regime": reg_enum.value,
-        },
-    )
+    features_res = await session.execute(features_stmt)
+    inserted = (bar_res.rowcount or 0) > 0 or (features_res.rowcount or 0) > 0
+    if inserted:
+        await publish_to_redis(
+            bars_payload={
+                "ts": ts.isoformat(),
+                "symbol": symbol,
+                "timeframe": timeframe_enum.value,
+                "open": open_,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
+            },
+            features_payload={
+                "ts": ts.isoformat(),
+                "symbol": symbol,
+                "timeframe": timeframe_enum.value,
+                "atr_pct": atr_val,
+                "ema20": ema20,
+                "ema50": ema50,
+                "ema200": ema200,
+                "rsi": rsi_val,
+                "returns": state.returns.to_list()[-1] if len(state.returns) else None,
+                "vol": vol_val,
+                "regime": reg_enum.value,
+            },
+        )
 
 
 def _clean_payload(payload: dict) -> dict:
@@ -312,6 +323,8 @@ async def handle_ws_message(payload: dict) -> None:
         bars = data if isinstance(data, list) else [data]
         async with SessionLocal() as db_session:
             for bar in bars:
+                if not _is_confirmed_bar(bar):
+                    continue
                 ts_ms = int(bar.get("start", bar.get("t", 0)))
                 ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
                 lag_ms = (datetime.now(timezone.utc) - ts).total_seconds() * 1000

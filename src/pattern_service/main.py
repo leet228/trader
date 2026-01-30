@@ -107,9 +107,10 @@ async def persist_and_publish(ps: PatternSignal, session: AsyncSession) -> None:
         market_setup=ps.market_setup,
         setup_name=ps.setup_name,
     ).on_conflict_do_nothing(index_elements=["symbol", "timeframe", "ts"])
-    await session.execute(stmt)
+    res = await session.execute(stmt)
     await session.commit()
-    if redis_client:
+    inserted = (res.rowcount or 0) > 0
+    if inserted and redis_client:
         await redis_client.xadd(
             settings.redis_stream_patterns,
             {
